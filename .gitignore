@@ -40,6 +40,7 @@ Thumbs.db
 # Logs
 logs/
 *.log
+test-output.log
 
 # Runtime data
 pids/
@@ -343,3 +344,6 @@ lerna-debug.log*
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# custom
+route_sequences/*.md

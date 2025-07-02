@@ -1,10 +1,10 @@
 import React from 'react'
-import { useSelector } from 'react-redux'
-import { RootState } from '@/store/store'
+// import { useSelector } from 'react-redux'
+// import { RootState } from '@/store/store'
 import { User, Bell, Globe, Shield } from 'lucide-react'
 
 const Settings: React.FC = () => {
-  const { user } = useSelector((state: RootState) => state.user)
+  // const { user } = useSelector((state: RootState) => state.user)
 
   const settingsSections = [
     {
