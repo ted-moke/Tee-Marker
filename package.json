@@ -12,17 +12,19 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@reduxjs/toolkit": "^1.9.5",
+    "@tanstack/react-query": "^5.90.21",
+    "axios": "^1.4.0",
+    "clsx": "^1.2.1",
+    "date-fns": "^2.30.0",
+    "firebase": "^11.10.0",
+    "lucide-react": "^0.263.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^6.8.1",
-    "@reduxjs/toolkit": "^1.9.5",
-    "react-redux": "^8.1.1",
-    "axios": "^1.4.0",
-    "date-fns": "^2.30.0",
     "react-hook-form": "^7.45.4",
     "react-hot-toast": "^2.4.1",
-    "lucide-react": "^0.263.1",
-    "clsx": "^1.2.1",
+    "react-redux": "^8.1.1",
+    "react-router-dom": "^6.8.1",
     "tailwind-merge": "^1.14.0"
   },
   "devDependencies": {
@@ -41,4 +43,4 @@
     "typescript": "^5.0.2",
     "vite": "^4.4.5"
   }
-} 
+}

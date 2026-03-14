@@ -1,13 +1,6 @@
 import React from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { 
-  Home, 
-  Clock, 
-  MapPin, 
-  Settings, 
-  Menu,
-  X
-} from 'lucide-react'
+import { Home, Settings, Search, Menu, X } from 'lucide-react'
 import { useState } from 'react'
 
 interface LayoutProps {
@@ -20,9 +13,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: Home },
-    { name: 'Automations', href: '/automations', icon: Clock },
-    { name: 'Courses', href: '/courses', icon: MapPin },
-    { name: 'Settings', href: '/settings', icon: Settings },
+    { name: 'Preferences', href: '/preferences', icon: Settings },
+    { name: 'Search', href: '/search', icon: Search },
   ]
 
   const isActive = (href: string) => location.pathname === href
@@ -35,10 +27,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="fixed inset-y-0 left-0 flex w-64 flex-col bg-white">
           <div className="flex h-16 items-center justify-between px-4">
             <h1 className="text-xl font-bold text-gray-900">Tee Marker</h1>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="text-gray-400 hover:text-gray-600"
-            >
+            <button onClick={() => setSidebarOpen(false)} className="text-gray-400 hover:text-gray-600">
               <X size={24} />
             </button>
           </div>
@@ -56,11 +45,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
-                  <Icon
-                    className={`mr-3 h-5 w-5 ${
-                      isActive(item.href) ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
-                    }`}
-                  />
+                  <Icon className={`mr-3 h-5 w-5 ${isActive(item.href) ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
                   {item.name}
                 </Link>
               )
@@ -88,11 +73,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
-                  <Icon
-                    className={`mr-3 h-5 w-5 ${
-                      isActive(item.href) ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
-                    }`}
-                  />
+                  <Icon className={`mr-3 h-5 w-5 ${isActive(item.href) ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
                   {item.name}
                 </Link>
               )
@@ -105,11 +86,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <div className="lg:pl-64">
         {/* Mobile header */}
         <div className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 shadow-sm lg:hidden">
-          <button
-            type="button"
-            className="-m-2.5 p-2.5 text-gray-700 lg:hidden"
-            onClick={() => setSidebarOpen(true)}
-          >
+          <button type="button" className="-m-2.5 p-2.5 text-gray-700 lg:hidden" onClick={() => setSidebarOpen(true)}>
             <Menu size={24} />
           </button>
           <div className="flex-1 text-sm font-semibold leading-6 text-gray-900">
@@ -117,7 +94,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </div>
         </div>
 
-        {/* Page content */}
         <main className="py-6">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             {children}
@@ -128,4 +104,4 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   )
 }
 
-export default Layout 
+export default Layout

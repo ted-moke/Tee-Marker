@@ -347,3 +347,5 @@ lerna-debug.log*
 
 # custom
 route_sequences/*.md
+keys/
+FOR_ME.md

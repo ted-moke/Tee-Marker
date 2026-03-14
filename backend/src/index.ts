@@ -2,42 +2,55 @@ import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import compression from 'compression'
-import { initializeApp, cert } from 'firebase-admin/app'
+import { initializeApp } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
-import authRoutes from './routes/auth'
-import automationRoutes from './routes/automations'
-import courseRoutes from './routes/courses'
+import preferencesRoutes from './routes/preferences'
+import schedulerRoutes from './routes/scheduler'
+import historyRoutes from './routes/history'
 import teeTimeRoutes from './routes/teeTimes'
+import { schedulerService } from './services/SchedulerService'
+import { Preferences } from './types'
+import { DEFAULT_PREFERENCES } from './constants'
+import 'dotenv/config'
 
-// Initialize Firebase Admin
-const serviceAccount = process.env['FIREBASE_SERVICE_ACCOUNT_KEY']
-  ? JSON.parse(process.env['FIREBASE_SERVICE_ACCOUNT_KEY'])
-  : undefined
+var admin = require('firebase-admin')
 
-if (serviceAccount) {
-  initializeApp({
-    credential: cert(serviceAccount),
-    projectId: process.env['GOOGLE_CLOUD_PROJECT'] || 'default-project',
-  })
-} else {
-  initializeApp({
-    projectId: process.env['GOOGLE_CLOUD_PROJECT'] || 'default-project',
-  })
+const serviceAccountKey = process.env['FIREBASE_SERVICE_ACCOUNT_KEY']
+if (!serviceAccountKey) {
+  console.error('FATAL: FIREBASE_SERVICE_ACCOUNT_KEY env var is not set')
+  process.exit(1)
 }
 
-// Initialize Firestore
+let parsedKey: object
+try {
+  if (serviceAccountKey.trim().startsWith('{')) {
+    parsedKey = JSON.parse(serviceAccountKey.replace(/\\n/g, '\n'))
+  } else {
+    // Treat as a file path
+    const fs = require('fs')
+    parsedKey = JSON.parse(fs.readFileSync(serviceAccountKey, 'utf8'))
+  }
+} catch (err) {
+  console.error('FATAL: FIREBASE_SERVICE_ACCOUNT_KEY is not valid JSON or a readable file path:', err)
+  process.exit(1)
+}
+
+try {
+  initializeApp({ credential: admin.credential.cert(parsedKey) })
+} catch (err) {
+  console.error('FATAL: Firebase initializeApp failed:', err)
+  process.exit(1)
+}
+
 export const db = getFirestore()
 
-// Create Express app
 const app = express()
 
-// Middleware
 app.use(helmet())
 app.use(compression())
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
 
-// CORS configuration
 const corsOptions = {
   origin: process.env['NODE_ENV'] === 'production'
     ? process.env['FRONTEND_URL']
@@ -47,45 +60,39 @@ const corsOptions = {
 }
 app.use(cors(corsOptions))
 
-// Health check endpoint
 app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    environment: process.env['NODE_ENV'] || 'development'
-  })
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), schedulerRunning: schedulerService.getStatus().isRunning })
 })
 
-// API routes
-app.use('/api/auth', authRoutes)
-app.use('/api/automations', automationRoutes)
-app.use('/api/courses', courseRoutes)
+app.use('/api/preferences', preferencesRoutes)
+app.use('/api', schedulerRoutes)
+app.use('/api/history', historyRoutes)
 app.use('/api/tee-times', teeTimeRoutes)
 
-// Error handling middleware
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Error:', err)
-  
-  res.status(err.status || 500).json({
+  res.status(err.statusCode || err.status || 500).json({
     success: false,
     error: process.env['NODE_ENV'] === 'production' ? 'Internal server error' : err.message,
-    ...(process.env['NODE_ENV'] !== 'production' && { stack: err.stack })
   })
 })
 
-// 404 handler
 app.use('*', (_req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Route not found'
-  })
+  res.status(404).json({ success: false, error: 'Route not found' })
 })
 
-// Start server
 const PORT = process.env['PORT'] || 8080
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`)
-  console.log(`🌍 Environment: ${process.env['NODE_ENV'] || 'development'}`)
-  console.log(`📊 Health check: http://localhost:${PORT}/health`)
-}) 
+app.listen(PORT, async () => {
+  console.log(`Server running on port ${PORT}`)
+  try {
+    const prefsDoc = await db.collection('preferences').doc('user').get()
+    const interval = prefsDoc.exists
+      ? (prefsDoc.data() as Preferences).checkIntervalMinutes
+      : DEFAULT_PREFERENCES.checkIntervalMinutes
+    schedulerService.start(interval)
+    console.log(`Scheduler started (every ${interval} min)`)
+  } catch (err: any) {
+    console.error('Failed to start scheduler:', JSON.stringify(err, Object.getOwnPropertyNames(err)))
+  }
+})

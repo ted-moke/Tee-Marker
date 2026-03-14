@@ -1,180 +1,137 @@
-# Tee Marker - Golf Tee Time Tracker
+# Tee Marker
 
-A web application built with TypeScript and React to automate golf tee time tracking and booking across multiple golf courses with different booking platforms.
+Personal golf tee time monitor. Periodically checks Francis Byrne Golf Course (and sister courses Hendricks Field and Weequahic) for available tee times in your configured window and sends a Discord notification when one is found.
 
-## Features
+## How it works
 
-- **Automation Creation**: Create automated checks for specific courses, time ranges, and days
-- **Background Monitoring**: Cloud functions periodically check for available tee times
-- **Smart Booking**: Automatic booking when conditions are met
-- **Multi-Platform Support**: Handle different golf course booking APIs and response formats
-- **Token Management**: Handle API authentication and token refresh
+1. You configure which courses to monitor, which days, and what time window you want
+2. The backend scheduler runs on your chosen interval (every 5–60 min)
+3. When a tee time appears in your window that hasn't been notified yet, a Discord message is sent
+4. You can also manually search for tee times or trigger a check from the dashboard
 
-## Tech Stack
+---
 
-### Frontend
-- **React 18** with TypeScript
-- **Redux Toolkit** for state management
-- **React Router** for navigation
-- **Tailwind CSS** for styling
-- **Vite** for build tooling
-- **Lucide React** for icons
+## Prerequisites
 
-### Backend
-- **Node.js** with TypeScript
-- **Express.js** for API server
-- **Firebase Admin** for database and authentication
-- **Google Cloud Functions** for background jobs
-- **Axios** for HTTP requests
+- Node.js 18+
+- A Firebase project with Firestore enabled
+- A Firebase service account key (JSON)
+- A Foreup account (to log in to Francis Byrne's booking system)
+- A Discord server with a webhook URL
 
-### Infrastructure
-- **Google Cloud Platform**
-- **Firestore** for database
-- **Cloud Functions** for serverless computing
-- **Cloud Scheduler** for cron jobs
+---
 
-## Project Structure
+## Setup
 
-```
-tee-marker/
-├── src/                    # Frontend source code
-│   ├── components/         # Reusable UI components
-│   ├── pages/             # Page components
-│   ├── store/             # Redux store and slices
-│   └── types/             # TypeScript type definitions
-├── backend/               # Backend API server
-│   ├── src/
-│   │   ├── controllers/   # API route handlers
-│   │   ├── models/        # Data models
-│   │   ├── services/      # Business logic
-│   │   └── utils/         # Utility functions
-│   └── functions/         # Google Cloud Functions
-├── docs/                  # Documentation
-└── scripts/               # Build and deployment scripts
-```
+### 1. Clone and install
 
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+ 
-- npm or yarn
-- Google Cloud Platform account
-- Firebase project
-
-### Frontend Setup
-
-1. Install dependencies:
 ```bash
+git clone <repo-url>
+cd tee-marker
+
+# Frontend deps
 npm install
+
+# Backend deps
+cd backend && npm install && cd ..
 ```
 
-2. Start development server:
-```bash
-npm run dev
-```
+### 2. Firebase setup
 
-3. Build for production:
-```bash
-npm run build
-```
+1. Go to [Firebase Console](https://console.firebase.google.com/) → your project → Firestore → Create database
+2. Go to Project Settings → Service Accounts → Generate new private key
+3. Download the JSON file and note its path (or copy its contents)
 
-### Backend Setup
+### 3. Backend environment
 
-1. Navigate to backend directory:
-```bash
-cd backend
-```
+Create `backend/.env`:
 
-2. Install dependencies:
-```bash
-npm install
-```
-
-3. Create environment file:
-```bash
-cp .env.example .env
-```
-
-4. Configure environment variables:
 ```env
 PORT=8080
 NODE_ENV=development
-GOOGLE_CLOUD_PROJECT=your-project-id
-FIREBASE_SERVICE_ACCOUNT_KEY=path/to/service-account.json
-JWT_SECRET=your-jwt-secret
+
+# Path to your Firebase service account JSON, OR the raw JSON string
+FIREBASE_SERVICE_ACCOUNT_KEY=/path/to/your-service-account.json
+
+# Your Foreup login credentials (the account you use to book at Francis Byrne)
+FRANCIS_BYRNE_USERNAME=your@email.com
+FRANCIS_BYRNE_PASSWORD=yourpassword
 ```
 
-5. Start development server:
+### 4. Discord webhook
+
+1. In your Discord server, go to a channel → Edit Channel → Integrations → Webhooks → New Webhook
+2. Copy the webhook URL — you'll paste it into the app's Preferences page
+
+---
+
+## Running the app
+
+Open two terminals:
+
 ```bash
+# Terminal 1 — backend (runs on port 8080)
+cd backend && npm run dev
+
+# Terminal 2 — frontend (runs on port 3000)
 npm run dev
 ```
 
-### Google Cloud Setup
+Open [http://localhost:3000](http://localhost:3000).
 
-1. Create a new Google Cloud project
-2. Enable required APIs:
-   - Cloud Functions API
-   - Cloud Scheduler API
-   - Firestore API
-   - Cloud Build API
+---
 
-3. Set up Firebase:
-   - Create Firestore database
-   - Generate service account key
-   - Configure security rules
+## First-time configuration
 
-4. Deploy Cloud Functions:
-```bash
-gcloud functions deploy checkTeeTimes --runtime nodejs18 --trigger-topic tee-time-checks
-```
+1. Go to **Preferences** (`/preferences`)
+2. Select which courses to monitor (Francis Byrne, Hendricks Field, Weequahic)
+3. Pick the days of the week you want to play
+4. Set your earliest and latest acceptable tee time
+5. Set minimum players available (e.g. 2 means only notify if 2+ spots open)
+6. Choose how often to check (every 5, 10, 15, 20, 30, or 60 minutes)
+7. Set how many days ahead to look (default: 7)
+8. Paste your Discord webhook URL and click **Test** to verify it works
+9. Click **Save Preferences**
 
-## Development
+The scheduler starts automatically when the backend boots and picks up your saved preferences.
 
-### Adding a New Golf Course
+---
 
-1. Create a new course adapter in `backend/src/adapters/`
-2. Implement the required interface methods
-3. Add course configuration to the database
-4. Update the frontend course management interface
+## Usage
 
-### Creating Automations
+### Dashboard (`/`)
+- See whether the scheduler is running, when it last ran, and when it runs next
+- View the results of recent checks (times found, notifications sent, any errors)
+- Click **Run Now** to trigger an immediate check outside the normal schedule
 
-1. Use the automation builder in the frontend
-2. Configure course selection, time ranges, and check intervals
-3. Set booking preferences (notify or auto-book)
-4. The system will automatically schedule background checks
+### Preferences (`/preferences`)
+- Update your monitoring configuration at any time
+- Changes to the check interval take effect immediately (scheduler restarts)
 
-## API Endpoints
+### Search (`/search`)
+- Manually search for tee times on any date without waiting for the scheduler
+- Useful for one-off lookups or verifying the Foreup connection is working
 
-### Automations
-- `GET /api/automations` - List user automations
-- `POST /api/automations` - Create new automation
-- `PUT /api/automations/:id` - Update automation
-- `DELETE /api/automations/:id` - Delete automation
+---
 
-### Courses
-- `GET /api/courses` - List configured courses
-- `POST /api/courses` - Add new course
-- `PUT /api/courses/:id` - Update course configuration
-- `DELETE /api/courses/:id` - Remove course
+## API endpoints
 
-### Tee Times
-- `GET /api/tee-times` - Search for available tee times
-- `POST /api/tee-times/book` - Book a tee time
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/preferences` | Get current config |
+| PUT | `/api/preferences` | Save config |
+| POST | `/api/preferences/test-webhook` | Send test Discord message |
+| GET | `/api/status` | Scheduler status |
+| POST | `/api/scheduler/run` | Trigger an immediate check |
+| GET | `/api/history` | Recent check records |
+| GET | `/api/tee-times/search` | Search tee times (`?scheduleId=&date=&players=`) |
+| GET | `/health` | Health check |
 
-## Contributing
+---
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+## Tech stack
 
-## License
-
-MIT License - see LICENSE file for details
-
-## Support
-
-For support and questions, please open an issue on GitHub or contact the development team. 
+- **Frontend**: React 18, TypeScript, Tailwind CSS, TanStack Query, React Hook Form, Vite
+- **Backend**: Node.js, Express, TypeScript, node-cron
+- **Database**: Firebase Firestore
+- **Notifications**: Discord webhooks
