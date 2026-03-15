@@ -14,8 +14,49 @@ function toDateString(date: Date): string {
   return date.toISOString().split('T')[0]!
 }
 
+function parseTimeToMinutes(value: string): number | null {
+  const trimmed = value.trim()
+  const v = trimmed.split(/[ T]/).pop()?.trim() || trimmed
+  const m12 = v.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (m12) {
+    const rawHourStr = m12[1]
+    const minuteStr = m12[2]
+    const suffixRaw = m12[3]
+    if (!rawHourStr || !minuteStr || !suffixRaw) return null
+    const rawHour = parseInt(rawHourStr, 10)
+    const minute = parseInt(minuteStr, 10)
+    const suffix = suffixRaw.toUpperCase()
+    if (Number.isNaN(rawHour) || Number.isNaN(minute) || minute < 0 || minute > 59 || rawHour < 1 || rawHour > 12) {
+      return null
+    }
+    const hour24 = (rawHour % 12) + (suffix === 'PM' ? 12 : 0)
+    return hour24 * 60 + minute
+  }
+
+  const m24 = v.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/)
+  if (m24) {
+    const hourStr = m24[1]
+    const minuteStr = m24[2]
+    if (!hourStr || !minuteStr) return null
+    const hour = parseInt(hourStr, 10)
+    const minute = parseInt(minuteStr, 10)
+    if (Number.isNaN(hour) || Number.isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      return null
+    }
+    return hour * 60 + minute
+  }
+
+  return null
+}
+
 function isInTimeRange(time: string, start: string, end: string): boolean {
-  return time >= start && time <= end
+  const t = parseTimeToMinutes(time)
+  const s = parseTimeToMinutes(start)
+  const e = parseTimeToMinutes(end)
+  if (t === null || s === null || e === null) {
+    return false
+  }
+  return t >= s && t <= e
 }
 
 export class SchedulerService {
@@ -101,11 +142,15 @@ export class SchedulerService {
       }
 
       const newMatches: TeeTime[] = []
+      console.log(
+        `[Scheduler] Starting check for schedules=${prefs.scheduleIds.join(',')} dates=${dates.join(',')} window=${prefs.timeRange.start}-${prefs.timeRange.end} players>=${prefs.players}`
+      )
 
+      record.schedulesChecked.push(...prefs.scheduleIds)
       for (const scheduleId of prefs.scheduleIds) {
-        record.schedulesChecked.push(scheduleId)
         for (const date of dates) {
           try {
+            // Query one schedule at a time so ForeUp uses the right primary schedule_id context.
             const times = await francisByrneAdapter.searchTeeTimes([scheduleId], {
               date,
               players: prefs.players,
@@ -113,6 +158,9 @@ export class SchedulerService {
 
             const inWindow = times.filter(t =>
               isInTimeRange(t.time, prefs.timeRange.start, prefs.timeRange.end)
+            )
+            console.log(
+              `[Scheduler] schedule=${scheduleId} date=${date} returned=${times.length} inWindow=${inWindow.length} sampleTimes=${times.slice(0, 5).map(t => t.time).join(',') || 'none'}`
             )
 
             record.timesFound += inWindow.length

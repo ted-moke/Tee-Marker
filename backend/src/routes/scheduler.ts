@@ -3,11 +3,11 @@ import { schedulerService } from '../services/SchedulerService'
 
 const router = Router()
 
-router.get('/status', (_req: Request, res: Response): void => {
+router.get(['/status', '/scheduler/status'], (_req: Request, res: Response): void => {
   res.json({ success: true, data: schedulerService.getStatus() })
 })
 
-router.post('/run', async (_req: Request, res: Response): Promise<void> => {
+router.post(['/run', '/scheduler/run'], async (_req: Request, res: Response): Promise<void> => {
   try {
     const result = await schedulerService.runCheck()
     res.json({ success: true, data: result })

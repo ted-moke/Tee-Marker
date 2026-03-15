@@ -4,7 +4,11 @@ export const FRANCIS_BYRNE_SCHEDULES: Record<string, string> = {
   '11077': 'Weequahic',
 }
 
-export const FOREUP_COURSE_ID = '22528'
+export const FOREUP_COURSE_BY_SCHEDULE: Record<string, string> = {
+  '11078': '22528', // Francis Byrne
+  '11077': '22527', // Weequahic
+  '11075': '22526', // Hendricks Field
+}
 
 export const VALID_CHECK_INTERVALS = [5, 10, 15, 20, 30, 60]
 
