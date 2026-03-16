@@ -54,7 +54,7 @@ const Dashboard: React.FC = () => {
       for (const date of dateRange) {
         byDate[date] = {}
         for (const scheduleId of scheduleIds) {
-          byDate[date][scheduleId] = null
+          byDate[date][scheduleId] = { earliest: null, additionalCount: 0, allTimes: [] }
         }
       }
 
@@ -63,13 +63,15 @@ const Dashboard: React.FC = () => {
         const request = requests[idx]
         if (!request) return
 
-        const earliest = result.value.data.reduce<TeeTime | null>((best, next) => {
-          if (!best) return next
-          return parseTimeToMinutes(next.time) < parseTimeToMinutes(best.time) ? next : best
-        }, null)
+        const sortedTimes = [...result.value.data].sort(
+          (a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time)
+        )
+        const earliest = sortedTimes[0] ?? null
 
-        if (earliest) {
-          byDate[request.date]![request.scheduleId] = earliest
+        byDate[request.date]![request.scheduleId] = {
+          earliest,
+          additionalCount: Math.max(0, sortedTimes.length - 1),
+          allTimes: sortedTimes,
         }
       })
 
@@ -95,12 +97,7 @@ const Dashboard: React.FC = () => {
   }).length
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-gray-500">Tee time monitoring status and recent activity</p>
-      </div>
-
+    <div className="space-y-3">
       <SchedulerCard
         status={status}
         runNowPending={runNow.isPending}

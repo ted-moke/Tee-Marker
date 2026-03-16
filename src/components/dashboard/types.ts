@@ -33,4 +33,10 @@ export interface TeeTime {
   price?: number
 }
 
-export type CalendarData = Record<string, Record<string, TeeTime | null>>
+export interface CourseDaySummary {
+  earliest: TeeTime | null
+  additionalCount: number
+  allTimes: TeeTime[]
+}
+
+export type CalendarData = Record<string, Record<string, CourseDaySummary>>

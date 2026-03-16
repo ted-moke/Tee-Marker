@@ -1,6 +1,5 @@
 import React from 'react'
-import { Play, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
-import { fmt } from '@/components/dashboard/utils'
+import { Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import type { SchedulerStatus, CheckRecord } from '@/components/dashboard/types'
 import RecentChecksList from '@/components/dashboard/RecentChecksList'
 
@@ -23,53 +22,33 @@ const SchedulerCard: React.FC<SchedulerCardProps> = ({
   onToggleRecentChecks,
   history,
 }) => (
-  <div className="card">
-    <div className="flex items-center justify-between mb-4">
-      <h2 className="text-lg font-medium text-gray-900">Scheduler</h2>
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-        status?.isRunning ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-      }`}>
-        {status?.isRunning ? 'Running' : 'Stopped'}
-      </span>
-    </div>
+  <div className="card p-3 sm:p-4">
+    <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center gap-2">
+        <h2 className="text-base font-medium text-gray-900">Scheduler</h2>
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+          status?.isRunning ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+        }`}>
+          {status?.isRunning ? 'Running' : 'Stopped'}
+        </span>
+      </div>
 
-    <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <div>
-        <dt className="text-sm text-gray-500">Last check</dt>
-        <dd className="mt-1 text-sm font-medium text-gray-900">{fmt(status?.lastCheck ?? null)}</dd>
-      </div>
-      <div>
-        <dt className="text-sm text-gray-500">Next check</dt>
-        <dd className="mt-1 text-sm font-medium text-gray-900">{fmt(status?.nextCheck ?? null)}</dd>
-      </div>
-      <div>
-        <dt className="text-sm text-gray-500">Last result</dt>
-        <dd className="mt-1 text-sm font-medium text-gray-900">
-          {status?.lastCheckResult
-            ? `${status.lastCheckResult.timesFound} found · ${status.lastCheckResult.notified} notified`
-            : '—'}
-        </dd>
-      </div>
-    </dl>
-
-    <div className="mt-4">
       <button
         onClick={onRunNow}
         disabled={runNowPending}
-        className="btn btn-primary flex items-center"
+        className="btn btn-primary text-sm px-3 py-1.5"
       >
         {runNowPending
-          ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Checking...</>
-          : <><Play className="h-4 w-4 mr-2" /> Run Now</>
-        }
+          ? <span className="inline-flex items-center"><Loader2 className="h-4 w-4 mr-2 animate-spin" />Running...</span>
+          : 'run'}
       </button>
     </div>
 
-    <div className="mt-5 border-t border-gray-100 pt-4">
+    <div className="border-t border-gray-100 pt-2">
       <button
         type="button"
         onClick={onToggleRecentChecks}
-        className="w-full flex items-center justify-between rounded-md px-2 py-2 text-left hover:bg-gray-50"
+        className="w-full flex items-center justify-between rounded-md px-1.5 py-1.5 text-left hover:bg-gray-50"
       >
         <span className="text-sm font-medium text-gray-900">{checksLast24h} checks in the last 24h</span>
         {showRecentChecks
@@ -79,7 +58,7 @@ const SchedulerCard: React.FC<SchedulerCardProps> = ({
       </button>
 
       {showRecentChecks && (
-        <div className="mt-2">
+        <div className="mt-1">
           <RecentChecksList history={history} />
         </div>
       )}

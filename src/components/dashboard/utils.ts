@@ -26,7 +26,7 @@ export function getDateRange(daysAhead: number): string[] {
 
 export function parseTimeToMinutes(time: string): number {
   const clean = time.trim()
-  const amPm = clean.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  const amPm = clean.match(/(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
 
   if (amPm) {
     let hours = parseInt(amPm[1]!, 10)
@@ -37,7 +37,7 @@ export function parseTimeToMinutes(time: string): number {
     return hours * 60 + minutes
   }
 
-  const twentyFourHour = clean.match(/^(\d{1,2}):(\d{2})$/)
+  const twentyFourHour = clean.match(/(\d{1,2}):(\d{2})$/)
   if (twentyFourHour) {
     const hours = parseInt(twentyFourHour[1]!, 10)
     const minutes = parseInt(twentyFourHour[2]!, 10)
@@ -45,6 +45,18 @@ export function parseTimeToMinutes(time: string): number {
   }
 
   return Number.MAX_SAFE_INTEGER
+}
+
+export function formatTime12h(rawTime: string): string {
+  const clean = rawTime.trim()
+  const minutes = parseTimeToMinutes(clean)
+  if (!Number.isFinite(minutes) || minutes === Number.MAX_SAFE_INTEGER) return clean
+
+  const h24 = Math.floor(minutes / 60)
+  const mins = minutes % 60
+  const meridiem = h24 >= 12 ? 'PM' : 'AM'
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12
+  return `${h12}:${String(mins).padStart(2, '0')} ${meridiem}`
 }
 
 export function weekdayLabel(dateStr: string): string {

@@ -1,42 +1,109 @@
-import React from 'react'
-import { Search } from 'lucide-react'
+import React, { useState } from 'react'
+import { Search, ChevronDown, ChevronUp } from 'lucide-react'
 import { SCHEDULE_NAMES } from '@/components/dashboard/constants'
-import { weekdayLabel, dateLabel } from '@/components/dashboard/utils'
-import type { TeeTime } from '@/components/dashboard/types'
+import { weekdayLabel, dateLabel, formatTime12h } from '@/components/dashboard/utils'
+import type { CourseDaySummary } from '@/components/dashboard/types'
 
 interface CalendarDayCardProps {
   date: string
   scheduleIds: string[]
   scheduledCheck: boolean
-  perCourse: Record<string, TeeTime | null>
+  perCourse: Record<string, CourseDaySummary>
 }
 
-const CalendarDayCard: React.FC<CalendarDayCardProps> = ({ date, scheduleIds, scheduledCheck, perCourse }) => (
-  <div className="rounded-lg border border-gray-200 p-3">
-    <p className="text-base font-semibold text-gray-900">{weekdayLabel(date)}</p>
-    <div className="mt-0.5 flex items-center gap-1.5 text-sm text-gray-500">
-      <span>{dateLabel(date)}</span>
-      {scheduledCheck && <Search className="h-3.5 w-3.5 text-gray-400" />}
-    </div>
+const CalendarDayCard: React.FC<CalendarDayCardProps> = ({ date, scheduleIds, scheduledCheck, perCourse }) => {
+  const [expandedCourses, setExpandedCourses] = useState<Record<string, boolean>>({})
+  const [showAllCourses, setShowAllCourses] = useState<Record<string, boolean>>({})
+  const visibleScheduleIds = scheduleIds.filter(scheduleId => {
+    const summary = perCourse[scheduleId]
+    return Boolean(summary?.earliest)
+  })
 
-    <div className="mt-3 space-y-2">
-      {scheduleIds.map(scheduleId => {
-        const earliest = perCourse[scheduleId]
-        return (
-          <div key={scheduleId} className="rounded-md bg-gray-50 px-2 py-1.5">
-            <p className="text-xs text-gray-500">{SCHEDULE_NAMES[scheduleId] ?? scheduleId}</p>
-            {earliest ? (
-              <p className="text-sm font-medium text-gray-900">
-                {earliest.time} · {earliest.availableSpots} players
-              </p>
-            ) : (
-              <p className="text-sm text-gray-400">No times</p>
-            )}
+  function toggleExpanded(scheduleId: string): void {
+    setExpandedCourses(prev => ({ ...prev, [scheduleId]: !prev[scheduleId] }))
+    setShowAllCourses(prev => ({ ...prev, [scheduleId]: false }))
+  }
+
+  function toggleShowAll(scheduleId: string): void {
+    setShowAllCourses(prev => ({ ...prev, [scheduleId]: !prev[scheduleId] }))
+  }
+
+  return (
+    <div className="rounded-md border border-gray-200 p-2">
+      <div className="flex items-center gap-1">
+        <p className="text-sm font-semibold text-gray-900">{weekdayLabel(date)} {dateLabel(date)}</p>
+        {scheduledCheck && <Search className="h-3.5 w-3.5 text-gray-400" />}
+      </div>
+
+      <div className="mt-2 space-y-1">
+        {visibleScheduleIds.length === 0 && (
+          <div className="rounded-sm bg-gray-50 px-2 py-1 text-xs text-gray-400">
+            No times
           </div>
-        )
-      })}
+        )}
+
+        {visibleScheduleIds.map(scheduleId => {
+          const summary = perCourse[scheduleId] ?? { earliest: null, additionalCount: 0, allTimes: [] }
+          const earliest = summary.earliest
+          const courseName = SCHEDULE_NAMES[scheduleId] ?? scheduleId
+          const isExpanded = Boolean(expandedCourses[scheduleId])
+          const showAll = Boolean(showAllCourses[scheduleId])
+          const nextTimes = summary.allTimes.slice(1)
+          const visibleExtraTimes = showAll ? nextTimes : nextTimes.slice(0, 5)
+          const hiddenCount = Math.max(0, nextTimes.length - visibleExtraTimes.length)
+          if (!earliest) return null
+
+          return (
+            <div key={scheduleId} className="rounded-sm bg-gray-50 px-2 py-1 text-xs text-gray-700">
+              <button
+                type="button"
+                onClick={() => toggleExpanded(scheduleId)}
+                className="w-full text-left"
+              >
+                <span className="text-gray-600">{courseName}</span>{' '}
+                <span className="font-semibold text-gray-900">{formatTime12h(earliest.time)}</span>{' '}
+                <span className="text-gray-600">· {earliest.availableSpots} players</span>
+                {summary.additionalCount > 0 && (
+                  <span className="text-gray-500"> | {summary.additionalCount} more times</span>
+                )}
+                <span className="inline-flex align-middle ml-1 text-gray-400">
+                  {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                </span>
+              </button>
+
+              {isExpanded && nextTimes.length > 0 && (
+                <div className="mt-1 space-y-0.5 border-t border-gray-200 pt-1">
+                  {visibleExtraTimes.map(time => (
+                    <p key={time.id} className="text-xs text-gray-600">
+                      {formatTime12h(time.time)} · {time.availableSpots} players
+                    </p>
+                  ))}
+                  {hiddenCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => toggleShowAll(scheduleId)}
+                      className="text-xs font-medium text-primary-600 hover:text-primary-700"
+                    >
+                      See more
+                    </button>
+                  )}
+                  {showAll && nextTimes.length > 5 && (
+                    <button
+                      type="button"
+                      onClick={() => toggleShowAll(scheduleId)}
+                      className="ml-3 text-xs font-medium text-gray-500 hover:text-gray-700"
+                    >
+                      Show less
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
-  </div>
-)
+  )
+}
 
 export default CalendarDayCard
