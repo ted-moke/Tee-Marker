@@ -6,6 +6,18 @@ export interface Preferences {
   checkIntervalMinutes: number
   lookAheadDays: number
   discordWebhookUrl: string
+  weatherThresholds: WeatherThresholds
+}
+
+export interface WeatherThresholds {
+  rainGoodMax: number
+  rainBadMin: number
+  windGoodMax: number
+  windBadMin: number
+  tempBadLow: number
+  tempGoodMin: number
+  tempGoodMax: number
+  tempBadHigh: number
 }
 
 export interface CheckRecord {
@@ -25,6 +37,14 @@ export interface NotifiedTime {
   notifiedAt: Date
 }
 
+export interface TeeTimeWeather {
+  temperatureF: number | null
+  precipitationProbabilityPct: number | null
+  windSpeedMph: number | null
+  weatherCode: number | null
+  weatherLabel: string
+}
+
 export interface TeeTime {
   id: string
   scheduleId: string
@@ -32,6 +52,7 @@ export interface TeeTime {
   time: string
   availableSpots: number
   price?: number
+  weather?: TeeTimeWeather
 }
 
 export interface SchedulerStatus {

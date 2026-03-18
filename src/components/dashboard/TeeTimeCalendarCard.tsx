@@ -1,6 +1,7 @@
 import React from 'react'
 import { Loader2 } from 'lucide-react'
 import CalendarDayCard from '@/components/dashboard/CalendarDayCard'
+import { DEFAULT_WEATHER_THRESHOLDS } from '@/components/dashboard/types'
 import type { Preferences, CalendarData } from '@/components/dashboard/types'
 
 interface TeeTimeCalendarCardProps {
@@ -62,6 +63,7 @@ const TeeTimeCalendarCard: React.FC<TeeTimeCalendarCardProps> = ({
                     scheduleIds={preferences.scheduleIds}
                     scheduledCheck
                     perCourse={perCourse}
+                    thresholds={preferences.weatherThresholds ?? DEFAULT_WEATHER_THRESHOLDS}
                   />
                 </div>
               </React.Fragment>

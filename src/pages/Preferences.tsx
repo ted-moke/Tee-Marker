@@ -13,6 +13,16 @@ interface Preferences {
   checkIntervalMinutes: number
   lookAheadDays: number
   discordWebhookUrl: string
+  weatherThresholds: {
+    rainGoodMax: number
+    rainBadMin: number
+    windGoodMax: number
+    windBadMin: number
+    tempBadLow: number
+    tempGoodMin: number
+    tempGoodMax: number
+    tempBadHigh: number
+  }
 }
 
 const SCHEDULES = [
@@ -33,6 +43,16 @@ const DEFAULT: Preferences = {
   checkIntervalMinutes: 30,
   lookAheadDays: 7,
   discordWebhookUrl: '',
+  weatherThresholds: {
+    rainGoodMax: 20,
+    rainBadMin: 60,
+    windGoodMax: 5,
+    windBadMin: 15,
+    tempBadLow: 45,
+    tempGoodMin: 60,
+    tempGoodMax: 80,
+    tempBadHigh: 90,
+  },
 }
 
 const Preferences: React.FC = () => {
@@ -166,6 +186,45 @@ const Preferences: React.FC = () => {
             <div>
               <label className="block text-sm text-gray-600 mb-1">Look ahead (days)</label>
               <input type="number" min={1} max={14} {...register('lookAheadDays', { valueAsNumber: true })} className="input w-full" />
+            </div>
+          </div>
+        </div>
+
+        {/* Weather thresholds */}
+        <div className="card">
+          <h2 className="text-base font-medium text-gray-900 mb-3">Weather Highlight Thresholds (Imperial)</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Rain green if below (%)</label>
+              <input type="number" {...register('weatherThresholds.rainGoodMax', { valueAsNumber: true })} className="input w-full" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Rain red if above (%)</label>
+              <input type="number" {...register('weatherThresholds.rainBadMin', { valueAsNumber: true })} className="input w-full" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Wind green if below (mph)</label>
+              <input type="number" {...register('weatherThresholds.windGoodMax', { valueAsNumber: true })} className="input w-full" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Wind red if above (mph)</label>
+              <input type="number" {...register('weatherThresholds.windBadMin', { valueAsNumber: true })} className="input w-full" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Temp red if below (F)</label>
+              <input type="number" {...register('weatherThresholds.tempBadLow', { valueAsNumber: true })} className="input w-full" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Temp green from (F)</label>
+              <input type="number" {...register('weatherThresholds.tempGoodMin', { valueAsNumber: true })} className="input w-full" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Temp green to (F)</label>
+              <input type="number" {...register('weatherThresholds.tempGoodMax', { valueAsNumber: true })} className="input w-full" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Temp red if above (F)</label>
+              <input type="number" {...register('weatherThresholds.tempBadHigh', { valueAsNumber: true })} className="input w-full" />
             </div>
           </div>
         </div>

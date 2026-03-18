@@ -1,11 +1,11 @@
 import axios from 'axios'
-import { TeeTime } from '../types'
+import { TeeTime, WeatherThresholds } from '../types'
 import { FRANCIS_BYRNE_SCHEDULES } from '../constants'
 
 const DISCORD_DESCRIPTION_LIMIT = 4000
 
 export class NotificationService {
-  async sendTeeTimeAlert(webhookUrl: string, times: TeeTime[]): Promise<void> {
+  async sendTeeTimeAlert(webhookUrl: string, times: TeeTime[], thresholds?: WeatherThresholds): Promise<void> {
     if (!webhookUrl) throw new Error('No Discord webhook URL configured')
     if (times.length === 0) return
 
@@ -25,7 +25,7 @@ export class NotificationService {
 
     for (const [group, groupTimes] of sortedGroups) {
       const sortedTimes = [...groupTimes].sort((a, b) => a.time.localeCompare(b.time))
-      const timeText = this.summarizeTimes(sortedTimes)
+      const timeText = this.summarizeTimes(sortedTimes, thresholds)
       const line = `• ${group}: ${timeText}`
 
       const next = lines.length === 0 ? line : `${lines.join('\n')}\n${line}`
@@ -79,8 +79,8 @@ export class NotificationService {
     return timePart
   }
 
-  private summarizeTimes(times: TeeTime[]): string {
-    const formatted = times.map(t => this.formatTime(t.time))
+  private summarizeTimes(times: TeeTime[], thresholds?: WeatherThresholds): string {
+    const formatted = times.map(t => this.formatTeeTimeWithWeather(t, thresholds))
     if (formatted.length <= 2) {
       return formatted.join(', ')
     }
@@ -88,6 +88,53 @@ export class NotificationService {
     const preview = formatted.slice(0, 2).join(', ')
     const remaining = formatted.length - 2
     return `${preview}, and ${remaining} more`
+  }
+
+  private formatTeeTimeWithWeather(time: TeeTime, thresholds?: WeatherThresholds): string {
+    const base = this.formatTime(time.time)
+    if (!time.weather) {
+      return base
+    }
+
+    const weatherParts: string[] = []
+    if (time.weather.precipitationProbabilityPct !== null) {
+      const rain = Math.round(time.weather.precipitationProbabilityPct)
+      weatherParts.push(`${this.rainEmoji(rain, thresholds)} ${rain}%`)
+    }
+    if (time.weather.windSpeedMph !== null) {
+      const wind = Math.round(time.weather.windSpeedMph)
+      weatherParts.push(`${this.windEmoji(wind, thresholds)} ${wind}mph`)
+    }
+    if (time.weather.temperatureF !== null) {
+      const temp = Math.round(time.weather.temperatureF)
+      weatherParts.push(`${this.tempEmoji(temp, thresholds)} ${temp}F`)
+    }
+
+    if (weatherParts.length === 0) {
+      return base
+    }
+    return `${base} (${weatherParts.join(' ')})`
+  }
+
+  private rainEmoji(value: number, thresholds?: WeatherThresholds): string {
+    if (!thresholds) return '🌧️'
+    if (value < thresholds.rainGoodMax) return '🟢'
+    if (value > thresholds.rainBadMin) return '🔴'
+    return '🟡'
+  }
+
+  private windEmoji(value: number, thresholds?: WeatherThresholds): string {
+    if (!thresholds) return '💨'
+    if (value < thresholds.windGoodMax) return '🟢'
+    if (value > thresholds.windBadMin) return '🔴'
+    return '🟡'
+  }
+
+  private tempEmoji(value: number, thresholds?: WeatherThresholds): string {
+    if (!thresholds) return '🌡️'
+    if (value < thresholds.tempBadLow || value > thresholds.tempBadHigh) return '🔴'
+    if (value >= thresholds.tempGoodMin && value <= thresholds.tempGoodMax) return '🟢'
+    return '🟡'
   }
 
   async testWebhook(webhookUrl: string): Promise<boolean> {

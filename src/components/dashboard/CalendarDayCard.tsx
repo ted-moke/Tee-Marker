@@ -2,16 +2,25 @@ import React, { useState } from 'react'
 import { Search, ChevronDown, ChevronUp } from 'lucide-react'
 import { SCHEDULE_NAMES } from '@/components/dashboard/constants'
 import { weekdayLabel, dateLabel, formatTime12h } from '@/components/dashboard/utils'
-import type { CourseDaySummary } from '@/components/dashboard/types'
+import WeatherMetrics from '@/components/weather/WeatherMetrics'
+import { DEFAULT_WEATHER_THRESHOLDS } from '@/components/dashboard/types'
+import type { CourseDaySummary, WeatherThresholds } from '@/components/dashboard/types'
 
 interface CalendarDayCardProps {
   date: string
   scheduleIds: string[]
   scheduledCheck: boolean
   perCourse: Record<string, CourseDaySummary>
+  thresholds?: WeatherThresholds
 }
 
-const CalendarDayCard: React.FC<CalendarDayCardProps> = ({ date, scheduleIds, scheduledCheck, perCourse }) => {
+const CalendarDayCard: React.FC<CalendarDayCardProps> = ({
+  date,
+  scheduleIds,
+  scheduledCheck,
+  perCourse,
+  thresholds = DEFAULT_WEATHER_THRESHOLDS,
+}) => {
   const [expandedCourses, setExpandedCourses] = useState<Record<string, boolean>>({})
   const [showAllCourses, setShowAllCourses] = useState<Record<string, boolean>>({})
   const visibleScheduleIds = scheduleIds.filter(scheduleId => {
@@ -70,13 +79,21 @@ const CalendarDayCard: React.FC<CalendarDayCardProps> = ({ date, scheduleIds, sc
                   {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                 </span>
               </button>
+              <div className="mt-0.5">
+                <WeatherMetrics weather={earliest.weather} thresholds={thresholds} />
+              </div>
 
               {isExpanded && nextTimes.length > 0 && (
                 <div className="mt-1 space-y-0.5 border-t border-gray-200 pt-1">
                   {visibleExtraTimes.map(time => (
-                    <p key={time.id} className="text-xs text-gray-600">
-                      {formatTime12h(time.time)} · {time.availableSpots} players
-                    </p>
+                    <div key={time.id} className="space-y-0.5">
+                      <p className="text-xs text-gray-600">
+                        {formatTime12h(time.time)} · {time.availableSpots} players
+                      </p>
+                      <div className="pl-1">
+                        <WeatherMetrics weather={time.weather} thresholds={thresholds} />
+                      </div>
+                    </div>
                   ))}
                   {hiddenCount > 0 && (
                     <button

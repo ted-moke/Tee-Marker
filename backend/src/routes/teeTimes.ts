@@ -1,5 +1,8 @@
 import { Router, Request, Response } from 'express'
 import { francisByrneAdapter } from '../adapters/FrancisByrneAdapter'
+import { COURSE_LOCATION_BY_SCHEDULE } from '../constants'
+import { weatherService } from '../services/WeatherService'
+import { TeeTime } from '../types'
 
 const router = Router()
 
@@ -12,15 +15,44 @@ router.get('/search', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
+    const schedule = scheduleId as string
+    const searchDate = date as string
     const times = await francisByrneAdapter.searchTeeTimes(
       [scheduleId as string],
       {
-        date: date as string,
+        date: searchDate,
         players: players ? parseInt(players as string) : 1,
       }
     )
 
-    res.json({ success: true, data: times })
+    const location = COURSE_LOCATION_BY_SCHEDULE[schedule]
+    if (!location) {
+      res.json({ success: true, data: times })
+      return
+    }
+
+    const weatherByTime = new Map<string, TeeTime['weather'] | null>()
+    const enrichedTimes = await Promise.all(
+      times.map(async (teeTime): Promise<TeeTime> => {
+        if (weatherByTime.has(teeTime.time)) {
+          const cachedWeather = weatherByTime.get(teeTime.time)
+          return cachedWeather ? { ...teeTime, weather: cachedWeather } : teeTime
+        }
+
+        try {
+          const weather = await weatherService.getWeatherForTeeTime(location, searchDate, teeTime.time)
+          weatherByTime.set(teeTime.time, weather)
+          return weather ? { ...teeTime, weather } : teeTime
+        } catch (weatherErr: unknown) {
+          const message = weatherErr instanceof Error ? weatherErr.message : String(weatherErr)
+          console.warn(`[tee-times/search] weather enrichment failed for ${schedule} ${searchDate}: ${message}`)
+          weatherByTime.set(teeTime.time, null)
+          return teeTime
+        }
+      })
+    )
+
+    res.json({ success: true, data: enrichedTimes })
   } catch (err: any) {
     console.error('Error searching tee times:', err)
     res.status(500).json({ success: false, error: 'Failed to search tee times' })

@@ -2,15 +2,9 @@ import React, { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Search as SearchIcon, Loader2 } from 'lucide-react'
 import { api } from '@/api'
-
-interface TeeTime {
-  id: string
-  scheduleId: string
-  date: string
-  time: string
-  availableSpots: number
-  price?: number
-}
+import WeatherMetrics from '@/components/weather/WeatherMetrics'
+import { DEFAULT_WEATHER_THRESHOLDS } from '@/components/dashboard/types'
+import type { TeeTime, Preferences } from '@/components/dashboard/types'
 
 const SCHEDULES = [
   { id: '11078', name: 'Francis Byrne' },
@@ -36,6 +30,11 @@ const Search: React.FC = () => {
     enabled: false,
   })
 
+  const { data: prefsRes } = useQuery({
+    queryKey: ['preferences'],
+    queryFn: () => api.get<{ success: boolean; data: Preferences }>('/preferences'),
+  })
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitted(true)
@@ -43,6 +42,7 @@ const Search: React.FC = () => {
   }
 
   const times = res?.data ?? []
+  const thresholds = prefsRes?.data.weatherThresholds ?? DEFAULT_WEATHER_THRESHOLDS
 
   return (
     <div className="space-y-6">
@@ -112,6 +112,7 @@ const Search: React.FC = () => {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Available Spots</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weather</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -121,6 +122,9 @@ const Search: React.FC = () => {
                     <td className="px-4 py-3 text-sm text-gray-600">{t.availableSpots}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">
                       {t.price !== undefined ? `$${t.price.toFixed(2)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600">
+                      <WeatherMetrics weather={t.weather} thresholds={thresholds} />
                     </td>
                   </tr>
                 ))}

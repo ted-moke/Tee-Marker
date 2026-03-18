@@ -2,6 +2,8 @@ import * as cron from 'node-cron'
 import { db } from '../index'
 import { francisByrneAdapter } from '../adapters/FrancisByrneAdapter'
 import { notificationService } from './NotificationService'
+import { weatherService } from './WeatherService'
+import { COURSE_LOCATION_BY_SCHEDULE, DEFAULT_PREFERENCES } from '../constants'
 import { Preferences, CheckRecord, SchedulerStatus, TeeTime } from '../types'
 
 function addDays(date: Date, days: number): Date {
@@ -97,6 +99,34 @@ export class SchedulerService {
     return { ...this.status }
   }
 
+  private async enrichTimesWithWeather(scheduleId: string, date: string, times: TeeTime[]): Promise<TeeTime[]> {
+    const location = COURSE_LOCATION_BY_SCHEDULE[scheduleId]
+    if (!location || times.length === 0) {
+      return times
+    }
+
+    const weatherByTime = new Map<string, TeeTime['weather'] | null>()
+    return Promise.all(
+      times.map(async (teeTime): Promise<TeeTime> => {
+        if (weatherByTime.has(teeTime.time)) {
+          const cached = weatherByTime.get(teeTime.time)
+          return cached ? { ...teeTime, weather: cached } : teeTime
+        }
+
+        try {
+          const weather = await weatherService.getWeatherForTeeTime(location, date, teeTime.time)
+          weatherByTime.set(teeTime.time, weather)
+          return weather ? { ...teeTime, weather } : teeTime
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err)
+          console.warn(`[Scheduler] Weather enrichment failed schedule=${scheduleId} date=${date}: ${message}`)
+          weatherByTime.set(teeTime.time, null)
+          return teeTime
+        }
+      })
+    )
+  }
+
   async runCheck(): Promise<CheckRecord> {
     if (this.isChecking) {
       console.log('Check already in progress, skipping')
@@ -125,7 +155,15 @@ export class SchedulerService {
         return record
       }
 
-      const prefs = prefsDoc.data() as Preferences
+      const rawPrefs = prefsDoc.data() as Partial<Preferences>
+      const prefs: Preferences = {
+        ...DEFAULT_PREFERENCES,
+        ...rawPrefs,
+        weatherThresholds: {
+          ...DEFAULT_PREFERENCES.weatherThresholds,
+          ...(rawPrefs.weatherThresholds ?? {}),
+        },
+      }
 
       if (!prefs.discordWebhookUrl) {
         record.errors.push('No Discord webhook URL configured')
@@ -159,13 +197,14 @@ export class SchedulerService {
             const inWindow = times.filter(t =>
               isInTimeRange(t.time, prefs.timeRange.start, prefs.timeRange.end)
             )
+            const inWindowWithWeather = await this.enrichTimesWithWeather(scheduleId, date, inWindow)
             console.log(
-              `[Scheduler] schedule=${scheduleId} date=${date} returned=${times.length} inWindow=${inWindow.length} sampleTimes=${times.slice(0, 5).map(t => t.time).join(',') || 'none'}`
+              `[Scheduler] schedule=${scheduleId} date=${date} returned=${times.length} inWindow=${inWindowWithWeather.length} sampleTimes=${times.slice(0, 5).map(t => t.time).join(',') || 'none'}`
             )
 
-            record.timesFound += inWindow.length
+            record.timesFound += inWindowWithWeather.length
 
-            for (const t of inWindow) {
+            for (const t of inWindowWithWeather) {
               const dedupId = `${t.scheduleId}_${t.date}_${t.time}`
               const existing = await db.collection('notifiedTimes').doc(dedupId).get()
               if (!existing.exists) {
@@ -182,7 +221,7 @@ export class SchedulerService {
 
       if (newMatches.length > 0 && prefs.discordWebhookUrl) {
         try {
-          await notificationService.sendTeeTimeAlert(prefs.discordWebhookUrl, newMatches)
+          await notificationService.sendTeeTimeAlert(prefs.discordWebhookUrl, newMatches, prefs.weatherThresholds)
           record.notified = newMatches.length
 
           // Write dedup records
