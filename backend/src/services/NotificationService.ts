@@ -12,7 +12,8 @@ export class NotificationService {
     const grouped = new Map<string, TeeTime[]>()
     for (const t of times) {
       const course = FRANCIS_BYRNE_SCHEDULES[t.scheduleId] || t.scheduleId
-      const key = `${course} — ${t.date}`
+      const dateLabel = this.formatRelativeDayLabel(t.date)
+      const key = `${course} — ${dateLabel}`
       if (!grouped.has(key)) grouped.set(key, [])
       grouped.get(key)!.push(t)
     }
@@ -53,6 +54,23 @@ export class NotificationService {
     }
 
     await axios.post(webhookUrl, { embeds: [embed] })
+  }
+
+  private formatRelativeDayLabel(isoDate: string): string {
+    const target = new Date(`${isoDate}T00:00:00`)
+    const today = new Date()
+    const base = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    const dayMs = 24 * 60 * 60 * 1000
+    const diffDays = Math.round((target.getTime() - base.getTime()) / dayMs)
+    const weekday = target.toLocaleDateString('en-US', { weekday: 'long' })
+    const weeksAhead = Math.floor(diffDays / 7)
+
+    let label = weekday
+    if (weeksAhead === 1) label = `Next ${weekday}`
+    else if (weeksAhead >= 2) label = `In ${weeksAhead} weeks • ${weekday}`
+
+    const shortDate = target.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    return `${label} (${shortDate})`
   }
 
   private formatTime(value: string): string {
