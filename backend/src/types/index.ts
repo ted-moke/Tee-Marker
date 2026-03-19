@@ -13,7 +13,7 @@ export interface WeatherThresholds {
   rainGoodMax: number
   rainBadMin: number
   windGoodMax: number
-  windBadMin: number
+  windMidMax: number
   tempBadLow: number
   tempGoodMin: number
   tempGoodMax: number

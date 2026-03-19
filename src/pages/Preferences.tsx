@@ -17,7 +17,7 @@ interface Preferences {
     rainGoodMax: number
     rainBadMin: number
     windGoodMax: number
-    windBadMin: number
+    windMidMax: number
     tempBadLow: number
     tempGoodMin: number
     tempGoodMax: number
@@ -47,7 +47,7 @@ const DEFAULT: Preferences = {
     rainGoodMax: 20,
     rainBadMin: 60,
     windGoodMax: 5,
-    windBadMin: 15,
+    windMidMax: 12,
     tempBadLow: 45,
     tempGoodMin: 60,
     tempGoodMax: 80,
@@ -207,8 +207,8 @@ const Preferences: React.FC = () => {
               <input type="number" {...register('weatherThresholds.windGoodMax', { valueAsNumber: true })} className="input w-full" />
             </div>
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Wind red if above (mph)</label>
-              <input type="number" {...register('weatherThresholds.windBadMin', { valueAsNumber: true })} className="input w-full" />
+              <label className="block text-sm text-gray-600 mb-1">Wind yellow up to (mph)</label>
+              <input type="number" {...register('weatherThresholds.windMidMax', { valueAsNumber: true })} className="input w-full" />
             </div>
             <div>
               <label className="block text-sm text-gray-600 mb-1">Temp red if below (F)</label>

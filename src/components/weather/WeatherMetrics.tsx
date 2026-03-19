@@ -14,7 +14,7 @@ interface WeatherMetricsProps {
 function toneClass (level: 'good' | 'bad' | 'neutral'): string {
   if (level === 'good') return 'text-green-600 font-semibold'
   if (level === 'bad') return 'text-red-600 font-semibold'
-  return 'text-gray-500'
+  return 'text-yellow-600 font-semibold'
 }
 
 function rainTone (
@@ -31,8 +31,8 @@ function windTone (
   thresholds: WeatherThresholds
 ): 'good' | 'bad' | 'neutral' {
   if (value < thresholds.windGoodMax) return 'good'
-  if (value > thresholds.windBadMin) return 'bad'
-  return 'neutral'
+  if (value <= thresholds.windMidMax) return 'neutral'
+  return 'bad'
 }
 
 function tempTone (

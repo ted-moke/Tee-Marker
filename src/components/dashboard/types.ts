@@ -47,7 +47,7 @@ export interface WeatherThresholds {
   rainGoodMax: number
   rainBadMin: number
   windGoodMax: number
-  windBadMin: number
+  windMidMax: number
   tempBadLow: number
   tempGoodMin: number
   tempGoodMax: number
@@ -58,7 +58,7 @@ export const DEFAULT_WEATHER_THRESHOLDS: WeatherThresholds = {
   rainGoodMax: 20,
   rainBadMin: 60,
   windGoodMax: 5,
-  windBadMin: 15,
+  windMidMax: 12,
   tempBadLow: 45,
   tempGoodMin: 60,
   tempGoodMax: 80,

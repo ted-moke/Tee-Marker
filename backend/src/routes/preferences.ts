@@ -54,14 +54,14 @@ router.put('/', async (req: Request, res: Response): Promise<void> => {
         rainGoodMax,
         rainBadMin,
         windGoodMax,
-        windBadMin,
+        windMidMax,
         tempBadLow,
         tempGoodMin,
         tempGoodMax,
         tempBadHigh,
       } = body.weatherThresholds
 
-      const values = [rainGoodMax, rainBadMin, windGoodMax, windBadMin, tempBadLow, tempGoodMin, tempGoodMax, tempBadHigh]
+      const values = [rainGoodMax, rainBadMin, windGoodMax, windMidMax, tempBadLow, tempGoodMin, tempGoodMax, tempBadHigh]
       if (values.some(v => typeof v !== 'number' || !Number.isFinite(v))) {
         res.status(400).json({ success: false, error: 'weatherThresholds must be valid numbers' })
         return
@@ -70,8 +70,8 @@ router.put('/', async (req: Request, res: Response): Promise<void> => {
         res.status(400).json({ success: false, error: 'rainGoodMax must be less than rainBadMin' })
         return
       }
-      if (!(windGoodMax < windBadMin)) {
-        res.status(400).json({ success: false, error: 'windGoodMax must be less than windBadMin' })
+      if (!(windGoodMax < windMidMax)) {
+        res.status(400).json({ success: false, error: 'windGoodMax must be less than windMidMax' })
         return
       }
       if (!(tempBadLow < tempGoodMin && tempGoodMin <= tempGoodMax && tempGoodMax < tempBadHigh)) {

@@ -179,16 +179,16 @@ export class NotificationService {
   private windEmoji(value: number, thresholds?: WeatherThresholds): string {
     if (!thresholds) return '💨'
     if (value < thresholds.windGoodMax) return '🟢'
-    if (value > thresholds.windBadMin) return '🔴'
-    return '🟡'
+    if (value <= thresholds.windMidMax) return '🟡'
+    return '🔴'
   }
 
   private windCircle(value: number | null, thresholds?: WeatherThresholds): string {
     if (value === null) return '⚪'
     if (!thresholds) return '⚪'
     if (value < thresholds.windGoodMax) return '🟢'
-    if (value > thresholds.windBadMin) return '🔴'
-    return '🟡'
+    if (value <= thresholds.windMidMax) return '🟡'
+    return '🔴'
   }
 
   private tempEmoji(value: number, thresholds?: WeatherThresholds): string {
