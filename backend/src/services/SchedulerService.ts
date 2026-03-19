@@ -19,6 +19,14 @@ interface DailyWeatherSummaryRunResult {
   dayCount?: number
 }
 
+interface TeeTimeNotificationTestRunResult {
+  sent: boolean
+  reason?: string
+  totalFound: number
+  notified: number
+  errors: string[]
+}
+
 function addDays(date: Date, days: number): Date {
   const d = new Date(date)
   d.setDate(d.getDate() + days)
@@ -246,6 +254,85 @@ export class SchedulerService {
     const searchDate = toDateString(new Date())
     const searchedTimes = await this.collectSearchTimesForFallback(prefs, searchDate)
     return this.sendDailyWeatherSummaryIfNeeded(prefs, searchedTimes, forceSend)
+  }
+
+  async runTeeTimeNotificationTest(): Promise<TeeTimeNotificationTestRunResult> {
+    const errors: string[] = []
+    const prefsDoc = await db.collection('preferences').doc('user').get()
+    if (!prefsDoc.exists) {
+      return { sent: false, reason: 'No preferences configured', totalFound: 0, notified: 0, errors }
+    }
+
+    const rawPrefs = prefsDoc.data() as Partial<Preferences>
+    const prefs: Preferences = {
+      ...DEFAULT_PREFERENCES,
+      ...rawPrefs,
+      weatherThresholds: {
+        ...DEFAULT_PREFERENCES.weatherThresholds,
+        ...(rawPrefs.weatherThresholds ?? {}),
+      },
+    }
+
+    if (!prefs.discordWebhookUrl) {
+      return { sent: false, reason: 'No Discord webhook URL configured', totalFound: 0, notified: 0, errors }
+    }
+
+    const dates: string[] = []
+    const today = new Date()
+    for (let i = 0; i <= (prefs.lookAheadDays || 7); i++) {
+      const d = addDays(today, i)
+      if (prefs.daysOfWeek.includes(d.getDay())) {
+        dates.push(toDateString(d))
+      }
+    }
+
+    const matchingTimes: TeeTime[] = []
+    for (const scheduleId of prefs.scheduleIds) {
+      for (const date of dates) {
+        try {
+          const times = await francisByrneAdapter.searchTeeTimes([scheduleId], {
+            date,
+            players: prefs.players,
+          })
+          const inWindow = times.filter(t =>
+            isInTimeRange(t.time, prefs.timeRange.start, prefs.timeRange.end)
+          )
+          const inWindowWithWeather = await this.enrichTimesWithWeather(
+            scheduleId,
+            date,
+            inWindow,
+            prefs.forecastOffsetHours
+          )
+          matchingTimes.push(...inWindowWithWeather)
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err)
+          errors.push(`Error checking schedule ${scheduleId} for ${date}: ${message}`)
+        }
+      }
+    }
+
+    if (matchingTimes.length === 0) {
+      return {
+        sent: false,
+        reason: 'No tee times found in current monitoring window',
+        totalFound: 0,
+        notified: 0,
+        errors,
+      }
+    }
+
+    await notificationService.sendTeeTimeAlert(
+      prefs.discordWebhookUrl,
+      matchingTimes,
+      prefs.weatherThresholds
+    )
+
+    return {
+      sent: true,
+      totalFound: matchingTimes.length,
+      notified: matchingTimes.length,
+      errors,
+    }
   }
 
   async runCheck(): Promise<CheckRecord> {

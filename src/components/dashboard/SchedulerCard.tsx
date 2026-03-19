@@ -9,6 +9,8 @@ interface SchedulerCardProps {
   onRunNow: () => void
   runWeatherOutlookPending: boolean
   onRunWeatherOutlook: () => void
+  runTestTeeTimesPending: boolean
+  onRunTestTeeTimes: () => void
   checksLast24h: number
   showRecentChecks: boolean
   onToggleRecentChecks: () => void
@@ -21,6 +23,8 @@ const SchedulerCard: React.FC<SchedulerCardProps> = ({
   onRunNow,
   runWeatherOutlookPending,
   onRunWeatherOutlook,
+  runTestTeeTimesPending,
+  onRunTestTeeTimes,
   checksLast24h,
   showRecentChecks,
   onToggleRecentChecks,
@@ -38,6 +42,16 @@ const SchedulerCard: React.FC<SchedulerCardProps> = ({
       </div>
 
       <div className="flex items-center gap-2">
+        <button
+          onClick={onRunTestTeeTimes}
+          disabled={runTestTeeTimesPending}
+          className="btn btn-secondary text-sm px-3 py-1.5"
+        >
+          {runTestTeeTimesPending
+            ? <span className="inline-flex items-center"><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sending...</span>
+            : 'send current tee times'}
+        </button>
+
         <button
           onClick={onRunWeatherOutlook}
           disabled={runWeatherOutlookPending}

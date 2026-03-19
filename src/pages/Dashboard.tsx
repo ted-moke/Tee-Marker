@@ -101,6 +101,23 @@ const Dashboard: React.FC = () => {
     onError: (err: Error) => toast.error(err.message),
   })
 
+  const sendCurrentTeeTimesTest = useMutation({
+    mutationFn: () =>
+      api.post<{
+        success: boolean
+        data?: { sent: boolean; notified: number; reason?: string; errors: string[] }
+      }>('/scheduler/test-tee-times'),
+    onSuccess: (res) => {
+      const payload = res.data
+      if (payload?.sent) {
+        toast.success(`Sent ${payload.notified} tee time${payload.notified === 1 ? '' : 's'} to Discord`)
+        return
+      }
+      toast(payload?.reason ?? 'No tee times were sent')
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
   const status = statusRes?.data
   const history = historyRes?.data ?? []
   const checksLast24h = history.filter(record => {
@@ -116,6 +133,8 @@ const Dashboard: React.FC = () => {
         onRunNow={() => runNow.mutate()}
         runWeatherOutlookPending={sendWeatherOutlook.isPending}
         onRunWeatherOutlook={() => sendWeatherOutlook.mutate()}
+        runTestTeeTimesPending={sendCurrentTeeTimesTest.isPending}
+        onRunTestTeeTimes={() => sendCurrentTeeTimesTest.mutate()}
         checksLast24h={checksLast24h}
         showRecentChecks={showRecentChecks}
         onToggleRecentChecks={() => setShowRecentChecks(prev => !prev)}
