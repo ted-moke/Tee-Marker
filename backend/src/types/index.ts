@@ -45,6 +45,11 @@ export interface TeeTimeWeather {
   weatherLabel: string
 }
 
+export interface DailyWeatherSummaryDay {
+  date: string
+  weather: TeeTimeWeather | null
+}
+
 export interface TeeTime {
   id: string
   scheduleId: string

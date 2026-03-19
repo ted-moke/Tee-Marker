@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { TeeTime, WeatherThresholds } from '../types'
+import { DailyWeatherSummaryDay, TeeTime, WeatherThresholds } from '../types'
 import { FRANCIS_BYRNE_SCHEDULES } from '../constants'
 
 const DISCORD_DESCRIPTION_LIMIT = 4000
@@ -56,6 +56,30 @@ export class NotificationService {
     await axios.post(webhookUrl, { embeds: [embed] })
   }
 
+  async sendDailyWeatherSummary(
+    webhookUrl: string,
+    days: DailyWeatherSummaryDay[],
+    thresholds?: WeatherThresholds
+  ): Promise<void> {
+    if (!webhookUrl) throw new Error('No Discord webhook URL configured')
+    if (days.length === 0) return
+
+    const sortedDays = [...days].sort((a, b) => a.date.localeCompare(b.date))
+    const lines = sortedDays.map(day => this.formatDailyWeatherLine(day, thresholds))
+
+    const embed = {
+      title: '🌤️ Daily 14-Day Weather Outlook',
+      color: 0x3b82f6,
+      description: lines.join('\n'),
+      timestamp: new Date().toISOString(),
+      footer: {
+        text: 'Legend: Rain / Wind / Temp circles',
+      },
+    }
+
+    await axios.post(webhookUrl, { embeds: [embed] })
+  }
+
   private formatRelativeDayLabel(isoDate: string): string {
     const target = new Date(`${isoDate}T00:00:00`)
     const today = new Date()
@@ -77,6 +101,27 @@ export class NotificationService {
     const trimmed = value.trim()
     const timePart = trimmed.split(/[ T]/).pop()?.trim() || trimmed
     return timePart
+  }
+
+  private formatDailyWeatherLine(day: DailyWeatherSummaryDay, thresholds?: WeatherThresholds): string {
+    const label = this.formatRelativeDayLabel(day.date)
+    if (!day.weather) {
+      return `• ${label}: ⚪ Rain -- | ⚪ Temp -- (Wind -- mph)`
+    }
+
+    const rainValue = day.weather.precipitationProbabilityPct
+    const windValue = day.weather.windSpeedMph
+    const tempValue = day.weather.temperatureF
+
+    const rainText = rainValue === null ? '--' : `${Math.round(rainValue)}%`
+    const windText = windValue === null ? '--' : `${Math.round(windValue)}mph`
+    const tempText = tempValue === null ? '--' : `${Math.round(tempValue)}F`
+
+    const rainCircle = this.rainCircle(rainValue, thresholds)
+    const windCircle = this.windCircle(windValue, thresholds)
+    const tempCircle = this.tempCircle(tempValue, thresholds)
+
+    return `• ${label}: ${rainCircle} Rain ${rainText} | ${tempCircle} Temp ${tempText} | ${windCircle} Wind ${windText} mph`
   }
 
   private summarizeTimes(times: TeeTime[], thresholds?: WeatherThresholds): string {
@@ -123,6 +168,14 @@ export class NotificationService {
     return '🟡'
   }
 
+  private rainCircle(value: number | null, thresholds?: WeatherThresholds): string {
+    if (value === null) return '⚪'
+    if (!thresholds) return '⚪'
+    if (value < thresholds.rainGoodMax) return '🟢'
+    if (value > thresholds.rainBadMin) return '🔴'
+    return '🟡'
+  }
+
   private windEmoji(value: number, thresholds?: WeatherThresholds): string {
     if (!thresholds) return '💨'
     if (value < thresholds.windGoodMax) return '🟢'
@@ -130,8 +183,24 @@ export class NotificationService {
     return '🟡'
   }
 
+  private windCircle(value: number | null, thresholds?: WeatherThresholds): string {
+    if (value === null) return '⚪'
+    if (!thresholds) return '⚪'
+    if (value < thresholds.windGoodMax) return '🟢'
+    if (value > thresholds.windBadMin) return '🔴'
+    return '🟡'
+  }
+
   private tempEmoji(value: number, thresholds?: WeatherThresholds): string {
     if (!thresholds) return '🌡️'
+    if (value < thresholds.tempBadLow || value > thresholds.tempBadHigh) return '🔴'
+    if (value >= thresholds.tempGoodMin && value <= thresholds.tempGoodMax) return '🟢'
+    return '🟡'
+  }
+
+  private tempCircle(value: number | null, thresholds?: WeatherThresholds): string {
+    if (value === null) return '⚪'
+    if (!thresholds) return '⚪'
     if (value < thresholds.tempBadLow || value > thresholds.tempBadHigh) return '🔴'
     if (value >= thresholds.tempGoodMin && value <= thresholds.tempGoodMax) return '🟢'
     return '🟡'

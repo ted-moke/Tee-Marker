@@ -16,4 +16,13 @@ router.post(['/run', '/scheduler/run'], async (_req: Request, res: Response): Pr
   }
 })
 
+router.post(['/scheduler/weather-outlook', '/weather-outlook'], async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await schedulerService.runDailyWeatherSummary(true)
+    res.json({ success: true, data: result })
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
 export default router

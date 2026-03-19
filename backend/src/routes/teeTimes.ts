@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express'
 import { francisByrneAdapter } from '../adapters/FrancisByrneAdapter'
-import { COURSE_LOCATION_BY_SCHEDULE } from '../constants'
 import { weatherService } from '../services/WeatherService'
 import { TeeTime } from '../types'
+import { resolveWeatherLocationFromTimes } from '../utils/weatherLocation'
 
 const router = Router()
 
@@ -25,7 +25,7 @@ router.get('/search', async (req: Request, res: Response): Promise<void> => {
       }
     )
 
-    const location = COURSE_LOCATION_BY_SCHEDULE[schedule]
+    const location = resolveWeatherLocationFromTimes(times, schedule)
     if (!location) {
       res.json({ success: true, data: times })
       return

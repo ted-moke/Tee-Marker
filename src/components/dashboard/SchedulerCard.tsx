@@ -7,6 +7,8 @@ interface SchedulerCardProps {
   status?: SchedulerStatus
   runNowPending: boolean
   onRunNow: () => void
+  runWeatherOutlookPending: boolean
+  onRunWeatherOutlook: () => void
   checksLast24h: number
   showRecentChecks: boolean
   onToggleRecentChecks: () => void
@@ -17,6 +19,8 @@ const SchedulerCard: React.FC<SchedulerCardProps> = ({
   status,
   runNowPending,
   onRunNow,
+  runWeatherOutlookPending,
+  onRunWeatherOutlook,
   checksLast24h,
   showRecentChecks,
   onToggleRecentChecks,
@@ -33,15 +37,27 @@ const SchedulerCard: React.FC<SchedulerCardProps> = ({
         </span>
       </div>
 
-      <button
-        onClick={onRunNow}
-        disabled={runNowPending}
-        className="btn btn-primary text-sm px-3 py-1.5"
-      >
-        {runNowPending
-          ? <span className="inline-flex items-center"><Loader2 className="h-4 w-4 mr-2 animate-spin" />Running...</span>
-          : 'run'}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onRunWeatherOutlook}
+          disabled={runWeatherOutlookPending}
+          className="btn btn-secondary text-sm px-3 py-1.5"
+        >
+          {runWeatherOutlookPending
+            ? <span className="inline-flex items-center"><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sending...</span>
+            : 'send 14-day weather'}
+        </button>
+
+        <button
+          onClick={onRunNow}
+          disabled={runNowPending}
+          className="btn btn-primary text-sm px-3 py-1.5"
+        >
+          {runNowPending
+            ? <span className="inline-flex items-center"><Loader2 className="h-4 w-4 mr-2 animate-spin" />Running...</span>
+            : 'run'}
+        </button>
+      </div>
     </div>
 
     <div className="border-t border-gray-100 pt-2">

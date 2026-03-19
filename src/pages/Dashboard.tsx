@@ -89,6 +89,18 @@ const Dashboard: React.FC = () => {
     onError: (err: Error) => toast.error(err.message),
   })
 
+  const sendWeatherOutlook = useMutation({
+    mutationFn: () => api.post<{ success: boolean; data?: { sent: boolean } }>('/scheduler/weather-outlook'),
+    onSuccess: (res) => {
+      if (res.data?.sent) {
+        toast.success('14-day weather outlook sent to Discord')
+      } else {
+        toast('Weather outlook was skipped')
+      }
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
   const status = statusRes?.data
   const history = historyRes?.data ?? []
   const checksLast24h = history.filter(record => {
@@ -102,6 +114,8 @@ const Dashboard: React.FC = () => {
         status={status}
         runNowPending={runNow.isPending}
         onRunNow={() => runNow.mutate()}
+        runWeatherOutlookPending={sendWeatherOutlook.isPending}
+        onRunWeatherOutlook={() => sendWeatherOutlook.mutate()}
         checksLast24h={checksLast24h}
         showRecentChecks={showRecentChecks}
         onToggleRecentChecks={() => setShowRecentChecks(prev => !prev)}

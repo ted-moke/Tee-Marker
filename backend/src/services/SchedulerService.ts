@@ -5,6 +5,19 @@ import { notificationService } from './NotificationService'
 import { weatherService } from './WeatherService'
 import { COURSE_LOCATION_BY_SCHEDULE, DEFAULT_PREFERENCES } from '../constants'
 import { Preferences, CheckRecord, SchedulerStatus, TeeTime } from '../types'
+import { resolveWeatherLocationFromTimes, resolveWeatherScheduleIdFromTimes } from '../utils/weatherLocation'
+
+const DAILY_WEATHER_STATE_COLLECTION = 'notificationState'
+const DAILY_WEATHER_STATE_DOC_ID = 'dailyWeatherSummary'
+const DAILY_WEATHER_DAYS = 14
+const DAILY_WEATHER_TIME = '09:00'
+
+interface DailyWeatherSummaryRunResult {
+  sent: boolean
+  reason?: string
+  scheduleId?: string
+  dayCount?: number
+}
 
 function addDays(date: Date, days: number): Date {
   const d = new Date(date)
@@ -14,6 +27,15 @@ function addDays(date: Date, days: number): Date {
 
 function toDateString(date: Date): string {
   return date.toISOString().split('T')[0]!
+}
+
+function toDateStringInTimeZone(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
 }
 
 function parseTimeToMinutes(value: string): number | null {
@@ -100,7 +122,7 @@ export class SchedulerService {
   }
 
   private async enrichTimesWithWeather(scheduleId: string, date: string, times: TeeTime[]): Promise<TeeTime[]> {
-    const location = COURSE_LOCATION_BY_SCHEDULE[scheduleId]
+    const location = resolveWeatherLocationFromTimes(times, scheduleId)
     if (!location || times.length === 0) {
       return times
     }
@@ -125,6 +147,100 @@ export class SchedulerService {
         }
       })
     )
+  }
+
+  private async sendDailyWeatherSummaryIfNeeded(
+    prefs: Preferences,
+    searchedTimes: TeeTime[],
+    forceSend: boolean = false
+  ): Promise<DailyWeatherSummaryRunResult> {
+    if (!prefs.discordWebhookUrl) {
+      return { sent: false, reason: 'No Discord webhook URL configured' }
+    }
+
+    const fallbackScheduleId = prefs.scheduleIds[0] ?? DEFAULT_PREFERENCES.scheduleIds[0] ?? '11078'
+    const selectedScheduleId = resolveWeatherScheduleIdFromTimes(searchedTimes, fallbackScheduleId)
+    const location = COURSE_LOCATION_BY_SCHEDULE[selectedScheduleId]
+    if (!location) {
+      console.warn(`[Scheduler] Daily weather summary skipped: no weather location for schedule=${selectedScheduleId}`)
+      return { sent: false, reason: 'No weather location configured for selected schedule', scheduleId: selectedScheduleId }
+    }
+
+    const now = new Date()
+    const todayKey = toDateStringInTimeZone(now, location.timezone)
+    const stateRef = db.collection(DAILY_WEATHER_STATE_COLLECTION).doc(DAILY_WEATHER_STATE_DOC_ID)
+    const stateDoc = await stateRef.get()
+    const stateData = stateDoc.data()
+    const lastSentDateKey = stateData?.['lastSentDateKey'] as string | undefined
+    if (!forceSend && lastSentDateKey === todayKey) {
+      return { sent: false, reason: 'Already sent today', scheduleId: selectedScheduleId }
+    }
+
+    const days = await Promise.all(
+      Array.from({ length: DAILY_WEATHER_DAYS }, async (_unused, offset) => {
+        const date = toDateString(addDays(now, offset))
+        try {
+          const weather = await weatherService.getWeatherForTeeTime(location, date, DAILY_WEATHER_TIME)
+          return { date, weather }
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err)
+          console.warn(`[Scheduler] Daily weather fetch failed date=${date}: ${message}`)
+          return { date, weather: null }
+        }
+      })
+    )
+
+    await notificationService.sendDailyWeatherSummary(prefs.discordWebhookUrl, days, prefs.weatherThresholds)
+
+    await stateRef.set(
+      {
+        lastSentDateKey: todayKey,
+        lastSentAt: new Date(),
+        timezone: location.timezone,
+        scheduleId: selectedScheduleId,
+      },
+      { merge: true }
+    )
+
+    return { sent: true, scheduleId: selectedScheduleId, dayCount: days.length }
+  }
+
+  private async collectSearchTimesForFallback(prefs: Preferences, date: string): Promise<TeeTime[]> {
+    const allTimes: TeeTime[] = []
+    for (const scheduleId of prefs.scheduleIds) {
+      try {
+        const times = await francisByrneAdapter.searchTeeTimes([scheduleId], {
+          date,
+          players: prefs.players,
+        })
+        allTimes.push(...times)
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        console.warn(`[Scheduler] Fallback search failed schedule=${scheduleId} date=${date}: ${message}`)
+      }
+    }
+    return allTimes
+  }
+
+  async runDailyWeatherSummary(forceSend: boolean = true): Promise<DailyWeatherSummaryRunResult> {
+    const prefsDoc = await db.collection('preferences').doc('user').get()
+    if (!prefsDoc.exists) {
+      return { sent: false, reason: 'No preferences configured' }
+    }
+
+    const rawPrefs = prefsDoc.data() as Partial<Preferences>
+    const prefs: Preferences = {
+      ...DEFAULT_PREFERENCES,
+      ...rawPrefs,
+      weatherThresholds: {
+        ...DEFAULT_PREFERENCES.weatherThresholds,
+        ...(rawPrefs.weatherThresholds ?? {}),
+      },
+    }
+
+    const searchDate = toDateString(new Date())
+    const searchedTimes = await this.collectSearchTimesForFallback(prefs, searchDate)
+    return this.sendDailyWeatherSummaryIfNeeded(prefs, searchedTimes, forceSend)
   }
 
   async runCheck(): Promise<CheckRecord> {
@@ -180,6 +296,7 @@ export class SchedulerService {
       }
 
       const newMatches: TeeTime[] = []
+      const searchedTimes: TeeTime[] = []
       console.log(
         `[Scheduler] Starting check for schedules=${prefs.scheduleIds.join(',')} dates=${dates.join(',')} window=${prefs.timeRange.start}-${prefs.timeRange.end} players>=${prefs.players}`
       )
@@ -193,6 +310,7 @@ export class SchedulerService {
               date,
               players: prefs.players,
             })
+            searchedTimes.push(...times)
 
             const inWindow = times.filter(t =>
               isInTimeRange(t.time, prefs.timeRange.start, prefs.timeRange.end)
@@ -217,6 +335,12 @@ export class SchedulerService {
             console.error(msg)
           }
         }
+      }
+
+      try {
+        await this.sendDailyWeatherSummaryIfNeeded(prefs, searchedTimes, false)
+      } catch (err: any) {
+        record.errors.push(`Daily weather summary failed: ${err?.message}`)
       }
 
       if (newMatches.length > 0 && prefs.discordWebhookUrl) {
