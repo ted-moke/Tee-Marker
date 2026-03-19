@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express'
+import { db } from '../index'
 import { francisByrneAdapter } from '../adapters/FrancisByrneAdapter'
 import { weatherService } from '../services/WeatherService'
-import { TeeTime } from '../types'
+import { Preferences, TeeTime } from '../types'
+import { DEFAULT_PREFERENCES } from '../constants'
 import { resolveWeatherLocationFromTimes } from '../utils/weatherLocation'
 
 const router = Router()
@@ -31,6 +33,13 @@ router.get('/search', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
+    const prefsDoc = await db.collection('preferences').doc('user').get()
+    const rawPrefs = prefsDoc.exists ? (prefsDoc.data() as Partial<Preferences>) : {}
+    const forecastOffsetHours =
+      typeof rawPrefs.forecastOffsetHours === 'number'
+        ? rawPrefs.forecastOffsetHours
+        : DEFAULT_PREFERENCES.forecastOffsetHours
+
     const weatherByTime = new Map<string, TeeTime['weather'] | null>()
     const enrichedTimes = await Promise.all(
       times.map(async (teeTime): Promise<TeeTime> => {
@@ -40,7 +49,7 @@ router.get('/search', async (req: Request, res: Response): Promise<void> => {
         }
 
         try {
-          const weather = await weatherService.getWeatherForTeeTime(location, searchDate, teeTime.time)
+          const weather = await weatherService.getWeatherForTeeTime(location, searchDate, teeTime.time, forecastOffsetHours)
           weatherByTime.set(teeTime.time, weather)
           return weather ? { ...teeTime, weather } : teeTime
         } catch (weatherErr: unknown) {

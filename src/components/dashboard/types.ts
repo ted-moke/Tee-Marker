@@ -22,6 +22,7 @@ export interface Preferences {
   scheduleIds: string[]
   daysOfWeek: number[]
   players: number
+  forecastOffsetHours: number
   weatherThresholds: WeatherThresholds
 }
 

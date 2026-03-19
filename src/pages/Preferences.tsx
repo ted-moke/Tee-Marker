@@ -12,6 +12,7 @@ interface Preferences {
   players: number
   checkIntervalMinutes: number
   lookAheadDays: number
+  forecastOffsetHours: number
   discordWebhookUrl: string
   weatherThresholds: {
     rainGoodMax: number
@@ -42,6 +43,7 @@ const DEFAULT: Preferences = {
   players: 1,
   checkIntervalMinutes: 30,
   lookAheadDays: 7,
+  forecastOffsetHours: 0,
   discordWebhookUrl: '',
   weatherThresholds: {
     rainGoodMax: 20,
@@ -155,7 +157,7 @@ const Preferences: React.FC = () => {
         {/* Time range + players */}
         <div className="card">
           <h2 className="text-base font-medium text-gray-900 mb-3">Time Window</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
             <div>
               <label className="block text-sm text-gray-600 mb-1">Earliest tee time</label>
               <input type="time" {...register('timeRange.start')} className="input w-full" />
@@ -167,6 +169,18 @@ const Preferences: React.FC = () => {
             <div>
               <label className="block text-sm text-gray-600 mb-1">Min players available</label>
               <input type="number" min={1} max={4} {...register('players', { valueAsNumber: true })} className="input w-full" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Forecast offset (hours)</label>
+              <input
+                type="number"
+                min={0}
+                max={6}
+                step={1}
+                {...register('forecastOffsetHours', { valueAsNumber: true })}
+                className="input w-full"
+              />
+              <p className="mt-1 text-xs text-gray-500">0 = tee time weather, 2 = around halfway through round</p>
             </div>
           </div>
         </div>

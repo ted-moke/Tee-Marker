@@ -121,7 +121,12 @@ export class SchedulerService {
     return { ...this.status }
   }
 
-  private async enrichTimesWithWeather(scheduleId: string, date: string, times: TeeTime[]): Promise<TeeTime[]> {
+  private async enrichTimesWithWeather(
+    scheduleId: string,
+    date: string,
+    times: TeeTime[],
+    forecastOffsetHours: number
+  ): Promise<TeeTime[]> {
     const location = resolveWeatherLocationFromTimes(times, scheduleId)
     if (!location || times.length === 0) {
       return times
@@ -136,7 +141,7 @@ export class SchedulerService {
         }
 
         try {
-          const weather = await weatherService.getWeatherForTeeTime(location, date, teeTime.time)
+          const weather = await weatherService.getWeatherForTeeTime(location, date, teeTime.time, forecastOffsetHours)
           weatherByTime.set(teeTime.time, weather)
           return weather ? { ...teeTime, weather } : teeTime
         } catch (err: unknown) {
@@ -315,7 +320,12 @@ export class SchedulerService {
             const inWindow = times.filter(t =>
               isInTimeRange(t.time, prefs.timeRange.start, prefs.timeRange.end)
             )
-            const inWindowWithWeather = await this.enrichTimesWithWeather(scheduleId, date, inWindow)
+            const inWindowWithWeather = await this.enrichTimesWithWeather(
+              scheduleId,
+              date,
+              inWindow,
+              prefs.forecastOffsetHours
+            )
             console.log(
               `[Scheduler] schedule=${scheduleId} date=${date} returned=${times.length} inWindow=${inWindowWithWeather.length} sampleTimes=${times.slice(0, 5).map(t => t.time).join(',') || 'none'}`
             )

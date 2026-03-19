@@ -5,6 +5,7 @@ export interface Preferences {
   players: number
   checkIntervalMinutes: number
   lookAheadDays: number
+  forecastOffsetHours: number
   discordWebhookUrl: string
   weatherThresholds: WeatherThresholds
 }

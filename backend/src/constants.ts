@@ -33,6 +33,8 @@ export const WEATHER_FORECAST_HOURLY_VARS = [
 ] as const
 
 export const VALID_CHECK_INTERVALS = [5, 10, 15, 20, 30, 60]
+export const FORECAST_OFFSET_HOURS_MIN = 0
+export const FORECAST_OFFSET_HOURS_MAX = 6
 
 export const DEFAULT_PREFERENCES = {
   scheduleIds: ['11078'],
@@ -41,6 +43,7 @@ export const DEFAULT_PREFERENCES = {
   players: 1,
   checkIntervalMinutes: 30,
   lookAheadDays: 7,
+  forecastOffsetHours: 0,
   discordWebhookUrl: '',
   weatherThresholds: {
     rainGoodMax: 20,

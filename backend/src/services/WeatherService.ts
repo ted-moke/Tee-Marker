@@ -189,7 +189,8 @@ export class WeatherService {
   async getWeatherForTeeTime(
     location: CourseLocation,
     date: string,
-    teeTimeValue: string
+    teeTimeValue: string,
+    forecastOffsetHours: number = 0
   ): Promise<TeeTimeWeather | null> {
     const forecast = await this.getDailyForecast(location, date)
     if (!forecast) {
@@ -200,6 +201,8 @@ export class WeatherService {
     if (teeMinutes === null) {
       return null
     }
+    const safeOffsetHours = Number.isFinite(forecastOffsetHours) ? forecastOffsetHours : 0
+    const targetMinutes = teeMinutes + safeOffsetHours * 60
 
     let bestIdx = -1
     let bestDistance = Number.POSITIVE_INFINITY
@@ -207,7 +210,7 @@ export class WeatherService {
       const hour = hourFromIsoLocal(forecast.hourly.time[i] ?? '')
       if (hour === null) continue
       const forecastMinutes = hour * 60
-      const distance = Math.abs(forecastMinutes - teeMinutes)
+      const distance = Math.abs(forecastMinutes - targetMinutes)
       if (distance < bestDistance) {
         bestDistance = distance
         bestIdx = i

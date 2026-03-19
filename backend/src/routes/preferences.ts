@@ -3,7 +3,13 @@ import { db } from '../index'
 import { schedulerService } from '../services/SchedulerService'
 import { notificationService } from '../services/NotificationService'
 import { Preferences } from '../types'
-import { FRANCIS_BYRNE_SCHEDULES, VALID_CHECK_INTERVALS, DEFAULT_PREFERENCES } from '../constants'
+import {
+  FRANCIS_BYRNE_SCHEDULES,
+  VALID_CHECK_INTERVALS,
+  DEFAULT_PREFERENCES,
+  FORECAST_OFFSET_HOURS_MIN,
+  FORECAST_OFFSET_HOURS_MAX,
+} from '../constants'
 
 const router = Router()
 
@@ -48,6 +54,22 @@ router.put('/', async (req: Request, res: Response): Promise<void> => {
     if (body.checkIntervalMinutes !== undefined && !VALID_CHECK_INTERVALS.includes(body.checkIntervalMinutes)) {
       res.status(400).json({ success: false, error: `checkIntervalMinutes must be one of ${VALID_CHECK_INTERVALS.join(', ')}` })
       return
+    }
+    if (body.forecastOffsetHours !== undefined) {
+      if (!Number.isInteger(body.forecastOffsetHours)) {
+        res.status(400).json({ success: false, error: 'forecastOffsetHours must be an integer' })
+        return
+      }
+      if (
+        body.forecastOffsetHours < FORECAST_OFFSET_HOURS_MIN ||
+        body.forecastOffsetHours > FORECAST_OFFSET_HOURS_MAX
+      ) {
+        res.status(400).json({
+          success: false,
+          error: `forecastOffsetHours must be between ${FORECAST_OFFSET_HOURS_MIN} and ${FORECAST_OFFSET_HOURS_MAX}`,
+        })
+        return
+      }
     }
     if (body.weatherThresholds) {
       const {
