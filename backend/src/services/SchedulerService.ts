@@ -11,6 +11,8 @@ const DAILY_WEATHER_STATE_COLLECTION = 'notificationState'
 const DAILY_WEATHER_STATE_DOC_ID = 'dailyWeatherSummary'
 const DAILY_WEATHER_DAYS = 14
 const DAILY_WEATHER_TIME = '09:00'
+const DAILY_WEATHER_AM_HOUR = 6
+const DAILY_WEATHER_PM_HOUR = 15
 
 interface DailyWeatherSummaryRunResult {
   sent: boolean
@@ -44,6 +46,27 @@ function toDateStringInTimeZone(date: Date, timeZone: string): string {
     month: '2-digit',
     day: '2-digit',
   }).format(date)
+}
+
+function getHourInTimeZone(date: Date, timeZone: string): number | null {
+  const raw = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: '2-digit',
+    hour12: false,
+  }).format(date)
+  const hour = Number.parseInt(raw, 10)
+  if (Number.isNaN(hour) || hour < 0 || hour > 23) {
+    return null
+  }
+  return hour
+}
+
+function getDailyWeatherSlot(date: Date, timeZone: string): '06' | '15' | null {
+  const hour = getHourInTimeZone(date, timeZone)
+  if (hour === null) return null
+  if (hour >= DAILY_WEATHER_PM_HOUR) return '15'
+  if (hour >= DAILY_WEATHER_AM_HOUR) return '06'
+  return null
 }
 
 function parseTimeToMinutes(value: string): number | null {
@@ -181,12 +204,17 @@ export class SchedulerService {
 
     const now = new Date()
     const todayKey = toDateStringInTimeZone(now, location.timezone)
+    const slot = getDailyWeatherSlot(now, location.timezone)
     const stateRef = db.collection(DAILY_WEATHER_STATE_COLLECTION).doc(DAILY_WEATHER_STATE_DOC_ID)
     const stateDoc = await stateRef.get()
     const stateData = stateDoc.data()
-    const lastSentDateKey = stateData?.['lastSentDateKey'] as string | undefined
-    if (!forceSend && lastSentDateKey === todayKey) {
-      return { sent: false, reason: 'Already sent today', scheduleId: selectedScheduleId }
+    const lastSentSlotKey = stateData?.['lastSentSlotKey'] as string | undefined
+    if (!forceSend && slot === null) {
+      return { sent: false, reason: 'Outside send window (before 6am local)', scheduleId: selectedScheduleId }
+    }
+    const slotKey = `${todayKey}_${slot ?? 'manual'}`
+    if (!forceSend && lastSentSlotKey === slotKey) {
+      return { sent: false, reason: 'Already sent for current time slot', scheduleId: selectedScheduleId }
     }
 
     const days = await Promise.all(
@@ -208,6 +236,7 @@ export class SchedulerService {
     await stateRef.set(
       {
         lastSentDateKey: todayKey,
+        lastSentSlotKey: slotKey,
         lastSentAt: new Date(),
         timezone: location.timezone,
         scheduleId: selectedScheduleId,

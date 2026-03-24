@@ -9,24 +9,28 @@ export class NotificationService {
     if (!webhookUrl) throw new Error('No Discord webhook URL configured')
     if (times.length === 0) return
 
-    const grouped = new Map<string, TeeTime[]>()
+    const grouped = new Map<string, { course: string; date: string; dateLabel: string; times: TeeTime[] }>()
     for (const t of times) {
       const course = FRANCIS_BYRNE_SCHEDULES[t.scheduleId] || t.scheduleId
       const dateLabel = this.formatRelativeDayLabel(t.date)
-      const key = `${course} — ${dateLabel}`
-      if (!grouped.has(key)) grouped.set(key, [])
-      grouped.get(key)!.push(t)
+      const key = `${t.date}|||${course}`
+      if (!grouped.has(key)) grouped.set(key, { course, date: t.date, dateLabel, times: [] })
+      grouped.get(key)!.times.push(t)
     }
 
-    const sortedGroups = [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b))
+    const sortedGroups = [...grouped.values()].sort((a, b) => {
+      const dateCmp = a.date.localeCompare(b.date)
+      if (dateCmp !== 0) return dateCmp
+      return a.course.localeCompare(b.course)
+    })
     const lines: string[] = []
     let included = 0
     let truncated = false
 
-    for (const [group, groupTimes] of sortedGroups) {
-      const sortedTimes = [...groupTimes].sort((a, b) => a.time.localeCompare(b.time))
+    for (const group of sortedGroups) {
+      const sortedTimes = [...group.times].sort((a, b) => a.time.localeCompare(b.time))
       const timeText = this.summarizeTimes(sortedTimes, thresholds)
-      const line = `• ${group}: ${timeText}`
+      const line = `• ${group.dateLabel} - ${group.course}: ${timeText}`
 
       const next = lines.length === 0 ? line : `${lines.join('\n')}\n${line}`
       if (next.length > DISCORD_DESCRIPTION_LIMIT) {
@@ -47,7 +51,7 @@ export class NotificationService {
     }
 
     const embed = {
-      title: `⛳ ${times.length} tee time${times.length > 1 ? 's' : ''} available`,
+      title: this.buildTeeTimeAlertTitle(times),
       color: 0x22c55e,
       description: lines.join('\n'),
       timestamp: new Date().toISOString(),
@@ -82,19 +86,20 @@ export class NotificationService {
 
   private formatRelativeDayLabel(isoDate: string): string {
     const target = new Date(`${isoDate}T00:00:00`)
-    const today = new Date()
-    const base = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-    const dayMs = 24 * 60 * 60 * 1000
-    const diffDays = Math.round((target.getTime() - base.getTime()) / dayMs)
-    const weekday = target.toLocaleDateString('en-US', { weekday: 'long' })
-    const weeksAhead = Math.floor(diffDays / 7)
+    const weekday = target.toLocaleDateString('en-US', { weekday: 'short' })
+    return `${weekday} ${target.getMonth() + 1}/${target.getDate()}`
+  }
 
-    let label = weekday
-    if (weeksAhead === 1) label = `Next ${weekday}`
-    else if (weeksAhead >= 2) label = `In ${weeksAhead} weeks • ${weekday}`
+  private buildTeeTimeAlertTitle(times: TeeTime[]): string {
+    if (times.length === 1) {
+      const time = times[0]!
+      const course = FRANCIS_BYRNE_SCHEDULES[time.scheduleId] || time.scheduleId
+      const dateLabel = this.formatRelativeDayLabel(time.date)
+      const timeLabel = this.formatTime(time.time)
+      return `${dateLabel} ${timeLabel} ${course} Tee Time`
+    }
 
-    const shortDate = target.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    return `${label} (${shortDate})`
+    return `⛳ ${times.length} tee times available`
   }
 
   private formatTime(value: string): string {
