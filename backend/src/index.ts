@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import compression from 'compression'
+import path from 'path'
 import { initializeApp } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
 import preferencesRoutes from './routes/preferences'
@@ -77,9 +78,17 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   })
 })
 
-app.use('*', (_req, res) => {
-  res.status(404).json({ success: false, error: 'Route not found' })
-})
+if (process.env['NODE_ENV'] === 'production') {
+  const distPath = path.join(__dirname, '../../dist')
+  app.use(express.static(distPath))
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'))
+  })
+} else {
+  app.use('*', (_req, res) => {
+    res.status(404).json({ success: false, error: 'Route not found' })
+  })
+}
 
 const PORT = process.env['PORT'] || 8080
 
