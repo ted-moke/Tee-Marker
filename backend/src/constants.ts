@@ -32,6 +32,14 @@ export const WEATHER_FORECAST_HOURLY_VARS = [
   'weather_code',
 ] as const
 
+export const WEATHER_FORECAST_DAILY_VARS = [
+  'temperature_2m_max',
+  'temperature_2m_min',
+  'precipitation_probability_max',
+  'wind_speed_10m_max',
+  'weather_code',
+] as const
+
 export const VALID_CHECK_INTERVALS = [5, 10, 15, 20, 30, 60]
 export const FORECAST_OFFSET_HOURS_MIN = 0
 export const FORECAST_OFFSET_HOURS_MAX = 6

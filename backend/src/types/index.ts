@@ -46,9 +46,18 @@ export interface TeeTimeWeather {
   weatherLabel: string
 }
 
+export interface DailyForecastWeather {
+  temperatureHighF: number | null
+  temperatureLowF: number | null
+  precipitationProbabilityPct: number | null
+  windSpeedMph: number | null
+  weatherCode: number | null
+  weatherLabel: string
+}
+
 export interface DailyWeatherSummaryDay {
   date: string
-  weather: TeeTimeWeather | null
+  weather: DailyForecastWeather | null
 }
 
 export interface TeeTime {

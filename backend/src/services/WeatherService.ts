@@ -3,11 +3,12 @@ import {
   CourseLocation,
   OPEN_METEO_BASE_URL,
   WEATHER_CACHE_TTL_MS,
+  WEATHER_FORECAST_DAILY_VARS,
   WEATHER_FORECAST_HOURLY_VARS,
 } from '../constants'
-import { TeeTimeWeather } from '../types'
+import { DailyForecastWeather, TeeTimeWeather } from '../types'
 
-interface OpenMeteoHourlyResponse {
+interface OpenMeteoForecastResponse {
   hourly?: {
     time?: string[]
     temperature_2m?: Array<number | null>
@@ -15,9 +16,17 @@ interface OpenMeteoHourlyResponse {
     wind_speed_10m?: Array<number | null>
     weather_code?: Array<number | null>
   }
+  daily?: {
+    time?: string[]
+    temperature_2m_max?: Array<number | null>
+    temperature_2m_min?: Array<number | null>
+    precipitation_probability_max?: Array<number | null>
+    wind_speed_10m_max?: Array<number | null>
+    weather_code?: Array<number | null>
+  }
 }
 
-interface CachedDailyForecast {
+interface CachedHourlyForecast {
   expiresAtMs: number
   hourly: {
     time: string[]
@@ -26,6 +35,22 @@ interface CachedDailyForecast {
     wind_speed_10m: Array<number | null>
     weather_code: Array<number | null>
   }
+}
+
+interface CachedDailyForecast {
+  expiresAtMs: number
+  daily: {
+    time: string[]
+    temperature_2m_max: Array<number | null>
+    temperature_2m_min: Array<number | null>
+    precipitation_probability_max: Array<number | null>
+    wind_speed_10m_max: Array<number | null>
+    weather_code: Array<number | null>
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 function parseTimeToMinutes(value: string): number | null {
@@ -123,15 +148,21 @@ function weatherCodeLabel(code: number | null): string {
 }
 
 export class WeatherService {
-  private readonly cache = new Map<string, CachedDailyForecast>()
+  private readonly hourlyCache = new Map<string, CachedHourlyForecast>()
+  private readonly dailyCache = new Map<string, CachedDailyForecast>()
+  private readonly dailyRangeCache = new Map<string, CachedDailyForecast>()
 
   private cacheKey(location: CourseLocation, date: string): string {
     return `${location.latitude},${location.longitude},${location.timezone},${date}`
   }
 
-  private async fetchDailyForecast(location: CourseLocation, date: string): Promise<CachedDailyForecast | null> {
+  private rangeCacheKey(location: CourseLocation, startDate: string, endDate: string): string {
+    return `${location.latitude},${location.longitude},${location.timezone},${startDate}..${endDate}`
+  }
+
+  private async fetchHourlyForecast(location: CourseLocation, date: string): Promise<CachedHourlyForecast | null> {
     try {
-      const response = await axios.get<OpenMeteoHourlyResponse>(OPEN_METEO_BASE_URL, {
+      const response = await axios.get<OpenMeteoForecastResponse>(OPEN_METEO_BASE_URL, {
         params: {
           latitude: location.latitude,
           longitude: location.longitude,
@@ -168,21 +199,21 @@ export class WeatherService {
     }
   }
 
-  private async getDailyForecast(location: CourseLocation, date: string): Promise<CachedDailyForecast | null> {
+  private async getHourlyForecast(location: CourseLocation, date: string): Promise<CachedHourlyForecast | null> {
     const key = this.cacheKey(location, date)
-    const cached = this.cache.get(key)
+    const cached = this.hourlyCache.get(key)
     if (cached && cached.expiresAtMs > Date.now()) {
       return cached
     }
 
-    console.log(`[WeatherService] cache miss key=${key}`)
-    const fresh = await this.fetchDailyForecast(location, date)
+    console.log(`[WeatherService] hourly cache miss key=${key}`)
+    const fresh = await this.fetchHourlyForecast(location, date)
     if (!fresh) {
-      this.cache.delete(key)
+      this.hourlyCache.delete(key)
       return null
     }
 
-    this.cache.set(key, fresh)
+    this.hourlyCache.set(key, fresh)
     return fresh
   }
 
@@ -192,7 +223,7 @@ export class WeatherService {
     teeTimeValue: string,
     forecastOffsetHours: number = 0
   ): Promise<TeeTimeWeather | null> {
-    const forecast = await this.getDailyForecast(location, date)
+    const forecast = await this.getHourlyForecast(location, date)
     if (!forecast) {
       return null
     }
@@ -233,6 +264,164 @@ export class WeatherService {
       weatherCode,
       weatherLabel: weatherCodeLabel(weatherCode),
     }
+  }
+
+  private mapDailyWeatherAtIndex(forecast: CachedDailyForecast, index: number): DailyForecastWeather {
+    const temperatureHighF = forecast.daily.temperature_2m_max[index] ?? null
+    const temperatureLowF = forecast.daily.temperature_2m_min[index] ?? null
+    const precipitationProbabilityPct = forecast.daily.precipitation_probability_max[index] ?? null
+    const windSpeedMph = forecast.daily.wind_speed_10m_max[index] ?? null
+    const weatherCode = forecast.daily.weather_code[index] ?? null
+    return {
+      temperatureHighF,
+      temperatureLowF,
+      precipitationProbabilityPct,
+      windSpeedMph,
+      weatherCode,
+      weatherLabel: weatherCodeLabel(weatherCode),
+    }
+  }
+
+  private async fetchDailyForecastRange(
+    location: CourseLocation,
+    startDate: string,
+    endDate: string
+  ): Promise<CachedDailyForecast | null> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await axios.get<OpenMeteoForecastResponse>(OPEN_METEO_BASE_URL, {
+          params: {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            timezone: location.timezone,
+            start_date: startDate,
+            end_date: endDate,
+            daily: WEATHER_FORECAST_DAILY_VARS.join(','),
+            temperature_unit: 'fahrenheit',
+            wind_speed_unit: 'mph',
+          },
+          timeout: 10000,
+        })
+
+        const daily = response.data.daily
+        const days = daily?.time ?? []
+        if (days.length === 0) {
+          return null
+        }
+
+        return {
+          expiresAtMs: Date.now() + WEATHER_CACHE_TTL_MS,
+          daily: {
+            time: days,
+            temperature_2m_max: daily?.temperature_2m_max ?? [],
+            temperature_2m_min: daily?.temperature_2m_min ?? [],
+            precipitation_probability_max: daily?.precipitation_probability_max ?? [],
+            wind_speed_10m_max: daily?.wind_speed_10m_max ?? [],
+            weather_code: daily?.weather_code ?? [],
+          },
+        }
+      } catch (err: unknown) {
+        const status = (err as { response?: { status?: number } }).response?.status
+        const message = err instanceof Error ? err.message : String(err)
+        if (status === 429 && attempt < 2) {
+          const waitMs = 300 * (attempt + 1) + Math.floor(Math.random() * 250)
+          console.warn(
+            `[WeatherService] Daily forecast 429 for ${startDate}..${endDate}; retrying in ${waitMs}ms (attempt ${attempt + 1}/3)`
+          )
+          await sleep(waitMs)
+          continue
+        }
+        console.warn(`[WeatherService] Daily forecast request failed for ${startDate}..${endDate}: ${message}`)
+        return null
+      }
+    }
+    return null
+  }
+
+  private async getDailyForecast(location: CourseLocation, date: string): Promise<CachedDailyForecast | null> {
+    const key = this.cacheKey(location, date)
+    const cached = this.dailyCache.get(key)
+    if (cached && cached.expiresAtMs > Date.now()) {
+      return cached
+    }
+
+    console.log(`[WeatherService] daily cache miss key=${key}`)
+    const fresh = await this.fetchDailyForecastRange(location, date, date)
+    if (!fresh) {
+      this.dailyCache.delete(key)
+      return null
+    }
+
+    this.dailyCache.set(key, fresh)
+    return fresh
+  }
+
+  async getDailyWeather(location: CourseLocation, date: string): Promise<DailyForecastWeather | null> {
+    const forecast = await this.getDailyForecast(location, date)
+    if (!forecast) {
+      return null
+    }
+
+    const dayIdx = forecast.daily.time.findIndex(value => value === date)
+    const bestIdx = dayIdx >= 0 ? dayIdx : 0
+    return this.mapDailyWeatherAtIndex(forecast, bestIdx)
+  }
+
+  async getDailyWeatherRange(
+    location: CourseLocation,
+    dates: string[]
+  ): Promise<Map<string, DailyForecastWeather | null>> {
+    const result = new Map<string, DailyForecastWeather | null>()
+    if (dates.length === 0) {
+      return result
+    }
+
+    const uniqueDates = [...new Set(dates)].sort((a, b) => a.localeCompare(b))
+    const startDate = uniqueDates[0]
+    const endDate = uniqueDates[uniqueDates.length - 1]
+    if (!startDate || !endDate) {
+      return result
+    }
+
+    const rangeKey = this.rangeCacheKey(location, startDate, endDate)
+    const cached = this.dailyRangeCache.get(rangeKey)
+    const forecast =
+      cached && cached.expiresAtMs > Date.now()
+        ? cached
+        : await this.fetchDailyForecastRange(location, startDate, endDate)
+
+    if (!forecast) {
+      for (const date of uniqueDates) {
+        result.set(date, null)
+      }
+      return result
+    }
+
+    this.dailyRangeCache.set(rangeKey, forecast)
+    for (let i = 0; i < forecast.daily.time.length; i += 1) {
+      const day = forecast.daily.time[i]
+      if (!day) continue
+      const weather = this.mapDailyWeatherAtIndex(forecast, i)
+      result.set(day, weather)
+      this.dailyCache.set(this.cacheKey(location, day), {
+        expiresAtMs: forecast.expiresAtMs,
+        daily: {
+          time: [day],
+          temperature_2m_max: [weather.temperatureHighF],
+          temperature_2m_min: [weather.temperatureLowF],
+          precipitation_probability_max: [weather.precipitationProbabilityPct],
+          wind_speed_10m_max: [weather.windSpeedMph],
+          weather_code: [weather.weatherCode],
+        },
+      })
+    }
+
+    for (const date of uniqueDates) {
+      if (!result.has(date)) {
+        result.set(date, null)
+      }
+    }
+    return result
   }
 }
 

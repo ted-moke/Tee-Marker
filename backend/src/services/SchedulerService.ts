@@ -6,11 +6,11 @@ import { weatherService } from './WeatherService'
 import { COURSE_LOCATION_BY_SCHEDULE, DEFAULT_PREFERENCES } from '../constants'
 import { Preferences, CheckRecord, SchedulerStatus, TeeTime } from '../types'
 import { resolveWeatherLocationFromTimes, resolveWeatherScheduleIdFromTimes } from '../utils/weatherLocation'
+import { buildDateKeysInTimeZone } from '../utils/dateKeys'
 
 const DAILY_WEATHER_STATE_COLLECTION = 'notificationState'
 const DAILY_WEATHER_STATE_DOC_ID = 'dailyWeatherSummary'
 const DAILY_WEATHER_DAYS = 14
-const DAILY_WEATHER_TIME = '09:00'
 const DAILY_WEATHER_AM_HOUR = 6
 const DAILY_WEATHER_PM_HOUR = 15
 
@@ -217,19 +217,9 @@ export class SchedulerService {
       return { sent: false, reason: 'Already sent for current time slot', scheduleId: selectedScheduleId }
     }
 
-    const days = await Promise.all(
-      Array.from({ length: DAILY_WEATHER_DAYS }, async (_unused, offset) => {
-        const date = toDateString(addDays(now, offset))
-        try {
-          const weather = await weatherService.getWeatherForTeeTime(location, date, DAILY_WEATHER_TIME)
-          return { date, weather }
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err)
-          console.warn(`[Scheduler] Daily weather fetch failed date=${date}: ${message}`)
-          return { date, weather: null }
-        }
-      })
-    )
+    const dateKeys = buildDateKeysInTimeZone(now, DAILY_WEATHER_DAYS, location.timezone)
+    const weatherByDate = await weatherService.getDailyWeatherRange(location, dateKeys)
+    const days = dateKeys.map(date => ({ date, weather: weatherByDate.get(date) ?? null }))
 
     await notificationService.sendDailyWeatherSummary(prefs.discordWebhookUrl, days, prefs.weatherThresholds)
 

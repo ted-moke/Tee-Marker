@@ -69,12 +69,16 @@ export class NotificationService {
     if (days.length === 0) return
 
     const sortedDays = [...days].sort((a, b) => a.date.localeCompare(b.date))
-    const lines = sortedDays.map(day => this.formatDailyWeatherLine(day, thresholds))
+    const labelWidth = sortedDays.reduce((max, day) => {
+      const label = this.formatRelativeDayLabel(day.date)
+      return Math.max(max, label.length)
+    }, 0)
+    const lines = sortedDays.map(day => this.formatDailyWeatherLine(day, thresholds, labelWidth))
 
     const embed = {
       title: '🌤️ Daily 14-Day Weather Outlook',
       color: 0x3b82f6,
-      description: lines.join('\n'),
+      description: `\`\`\`\n${lines.join('\n')}\n\`\`\``,
       timestamp: new Date().toISOString(),
       footer: {
         text: 'Legend: Rain / Wind / Temp circles',
@@ -108,25 +112,30 @@ export class NotificationService {
     return timePart
   }
 
-  private formatDailyWeatherLine(day: DailyWeatherSummaryDay, thresholds?: WeatherThresholds): string {
+  private formatDailyWeatherLine(day: DailyWeatherSummaryDay, thresholds: WeatherThresholds | undefined, labelWidth: number): string {
     const label = this.formatRelativeDayLabel(day.date)
     if (!day.weather) {
-      return `• ${label}: ⚪ Rain -- | ⚪ Temp -- (Wind -- mph)`
+      const alignedLabel = label.padEnd(labelWidth, ' ')
+      return `${alignedLabel} | ⚪ Rain ${'--'.padStart(3, ' ')} | ⚪ Temp ${'--/--'.padEnd(9, ' ')} | ⚪ Wind ${'--mph'.padStart(6, ' ')}`
     }
 
     const rainValue = day.weather.precipitationProbabilityPct
     const windValue = day.weather.windSpeedMph
-    const tempValue = day.weather.temperatureF
+    const tempHighValue = day.weather.temperatureHighF
+    const tempLowValue = day.weather.temperatureLowF
 
     const rainText = rainValue === null ? '--' : `${Math.round(rainValue)}%`
     const windText = windValue === null ? '--' : `${Math.round(windValue)}mph`
-    const tempText = tempValue === null ? '--' : `${Math.round(tempValue)}F`
+    const tempHighText = tempHighValue === null ? '--' : `${Math.round(tempHighValue)}F`
+    const tempLowText = tempLowValue === null ? '--' : `${Math.round(tempLowValue)}F`
 
     const rainCircle = this.rainCircle(rainValue, thresholds)
     const windCircle = this.windCircle(windValue, thresholds)
-    const tempCircle = this.tempCircle(tempValue, thresholds)
+    const tempCircle = this.tempCircle(tempHighValue, thresholds)
 
-    return `• ${label}: ${rainCircle} Rain ${rainText} | ${tempCircle} Temp ${tempText} | ${windCircle} Wind ${windText} mph`
+    const alignedLabel = label.padEnd(labelWidth, ' ')
+    const tempText = `${tempHighText}/${tempLowText}`
+    return `${alignedLabel} | ${tempCircle} ${tempText.padEnd(7, ' ')} | ${rainCircle} Rain ${rainText.padStart(3, ' ')} | ${windCircle} ${windText.padStart(6, ' ')}`
   }
 
   private summarizeTimes(times: TeeTime[], thresholds?: WeatherThresholds): string {
