@@ -16,9 +16,13 @@ import 'dotenv/config'
 
 var admin = require('firebase-admin')
 
-const serviceAccountKey = process.env['FIREBASE_SERVICE_ACCOUNT_KEY']
+const isDocker = process.env['IS_DOCKER'] === 'true'
+const serviceAccountKey = isDocker
+  ? process.env['FIREBASE_SERVICE_ACCOUNT_KEY_DOCKER']
+  : process.env['FIREBASE_SERVICE_ACCOUNT_KEY_LOCAL']
 if (!serviceAccountKey) {
-  console.error('FATAL: FIREBASE_SERVICE_ACCOUNT_KEY env var is not set')
+  const varName = isDocker ? 'FIREBASE_SERVICE_ACCOUNT_KEY_DOCKER' : 'FIREBASE_SERVICE_ACCOUNT_KEY_LOCAL'
+  console.error(`FATAL: ${varName} env var is not set`)
   process.exit(1)
 }
 
