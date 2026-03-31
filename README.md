@@ -30,7 +30,7 @@ git clone <repo-url>
 cd tee-marker
 
 # Frontend deps
-npm install
+cd frontend && npm install && cd ..
 
 # Backend deps
 cd backend && npm install && cd ..
@@ -74,7 +74,7 @@ Open two terminals:
 cd backend && npm run dev
 
 # Terminal 2 — frontend (runs on port 3000)
-npm run dev
+cd frontend && npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
