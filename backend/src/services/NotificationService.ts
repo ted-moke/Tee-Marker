@@ -235,31 +235,52 @@ export class NotificationService {
   async sendWeeklyDigest(webhookUrl: string, reservations: Reservation[], emptyWeekStarts: string[]): Promise<void> {
     if (!webhookUrl) throw new Error('No Discord webhook URL configured')
 
-    const lines: string[] = []
-
-    if (reservations.length > 0) {
-      for (const r of reservations) {
-        const dayLabel = this.formatRelativeDayLabel(r.date)
-        const timeLabel = this.formatTime(r.time)
-        lines.push(`• ${dayLabel} ${timeLabel} — ${r.scheduleName}`)
-      }
-    } else {
-      lines.push('No upcoming tee times booked.')
+    const getWeekStart = (dateStr: string): string => {
+      const d = new Date(`${dateStr}T00:00:00`)
+      const day = d.getDay()
+      d.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
+      return d.toISOString().split('T')[0]!
     }
 
-    if (emptyWeekStarts.length > 0) {
-      lines.push('')
-      for (const weekStart of emptyWeekStarts) {
-        const d = new Date(`${weekStart}T00:00:00`)
-        const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-        lines.push(`⚠️ No tee time booked for week of ${label}`)
-      }
+    // Build a map of weekStart → items, preserving chronological order
+    const weekMap = new Map<string, { reservations: Reservation[]; empty: boolean }>()
+
+    const ensureWeek = (ws: string) => {
+      if (!weekMap.has(ws)) weekMap.set(ws, { reservations: [], empty: false })
+      return weekMap.get(ws)!
     }
+
+    for (const r of reservations) ensureWeek(getWeekStart(r.date)).reservations.push(r)
+    for (const ws of emptyWeekStarts) ensureWeek(ws).empty = true
+
+    const sortedWeeks = [...weekMap.entries()].sort(([a], [b]) => a.localeCompare(b))
+
+    if (sortedWeeks.length === 0) {
+      const embed = {
+        title: '📅 Weekly Tee Time Digest',
+        color: 0x3b82f6,
+        description: 'No upcoming tee times booked.',
+        timestamp: new Date().toISOString(),
+      }
+      await axios.post(webhookUrl, { embeds: [embed] })
+      return
+    }
+
+    const sections = sortedWeeks.map(([ws, { reservations: rs, empty }]) => {
+      const d = new Date(`${ws}T00:00:00`)
+      const weekLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      const header = `**Week of ${weekLabel}**`
+      const items = rs
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map(r => `• ${this.formatRelativeDayLabel(r.date)} ${this.formatTime(r.time)} — ${r.scheduleName}`)
+      if (empty) items.push('⚠️ No tee time booked')
+      return [header, ...items].join('\n')
+    })
 
     const embed = {
       title: '📅 Weekly Tee Time Digest',
       color: 0x3b82f6,
-      description: lines.join('\n'),
+      description: sections.join('\n\n'),
       timestamp: new Date().toISOString(),
     }
     await axios.post(webhookUrl, { embeds: [embed] })

@@ -54,7 +54,30 @@ const ReservationsCard: React.FC<ReservationsCardProps> = ({
   onSendDigest,
   digestPending,
 }) => {
-  const hasReservations = reservations && reservations.length > 0
+  const getWeekStart = (dateStr: string): string => {
+    const d = new Date(`${dateStr}T00:00:00`)
+    const day = d.getDay()
+    d.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
+    return d.toISOString().split('T')[0]!
+  }
+
+  type RowItem =
+    | { kind: 'reservation'; sortKey: string; r: Reservation }
+    | { kind: 'empty'; sortKey: string; ew: EmptyWeek }
+
+  // Group by week, sorted chronologically
+  const weekMap = new Map<string, RowItem[]>()
+  const ensureWeek = (ws: string) => {
+    if (!weekMap.has(ws)) weekMap.set(ws, [])
+    return weekMap.get(ws)!
+  }
+  for (const r of (reservations ?? [])) {
+    ensureWeek(getWeekStart(r.date)).push({ kind: 'reservation', sortKey: r.date, r })
+  }
+  for (const ew of emptyWeeks) {
+    ensureWeek(ew.weekStart).push({ kind: 'empty', sortKey: ew.weekStart, ew })
+  }
+  const sortedWeeks = [...weekMap.entries()].sort(([a], [b]) => a.localeCompare(b))
 
   return (
     <div className="card p-3 sm:p-4">
@@ -85,34 +108,39 @@ const ReservationsCard: React.FC<ReservationsCardProps> = ({
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading reservations…
         </div>
+      ) : sortedWeeks.length === 0 ? (
+        <p className="text-sm text-gray-400 py-1">No upcoming reservations.</p>
       ) : (
-        <div className="space-y-1.5">
-          {hasReservations ? (
-            reservations.map(r => (
-              <div key={r.id} className="flex items-center justify-between rounded-md bg-green-50 px-3 py-2 text-sm">
-                <div>
-                  <span className="font-medium text-gray-900">{formatRelativeDay(r.date)}</span>
-                  <span className="text-gray-500 ml-2">{formatTime(r.time)}</span>
-                </div>
-                <div className="text-right text-xs text-gray-500">
-                  <span>{r.scheduleName} · {r.players}p</span>
+        <div className="space-y-3">
+          {sortedWeeks.map(([ws, items]) => {
+            const d = new Date(`${ws}T00:00:00`)
+            const weekLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            return (
+              <div key={ws}>
+                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Week of {weekLabel}</p>
+                <div className="space-y-1">
+                  {items.sort((a, b) => a.sortKey.localeCompare(b.sortKey)).map(row =>
+                    row.kind === 'reservation' ? (
+                      <div key={row.r.id} className="flex items-center justify-between rounded-md bg-green-50 px-3 py-2 text-sm">
+                        <div>
+                          <span className="font-medium text-gray-900">{formatRelativeDay(row.r.date)}</span>
+                          <span className="text-gray-500 ml-2">{formatTime(row.r.time)}</span>
+                        </div>
+                        <div className="text-right text-xs text-gray-500">
+                          <span>{row.r.scheduleName} · {row.r.players}p</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div key={row.ew.weekStart} className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs text-amber-700">
+                        <span>⚠️</span>
+                        <span>No tee time booked</span>
+                      </div>
+                    )
+                  )}
                 </div>
               </div>
-            ))
-          ) : (
-            <p className="text-sm text-gray-400 py-1">No upcoming reservations.</p>
-          )}
-
-          {emptyWeeks.length > 0 && (
-            <div className="mt-2 space-y-1">
-              {emptyWeeks.map(ew => (
-                <div key={ew.weekStart} className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs text-amber-700">
-                  <span className="font-medium">⚠️</span>
-                  <span>No tee time booked — week of {ew.label}</span>
-                </div>
-              ))}
-            </div>
-          )}
+            )
+          })}
         </div>
       )}
     </div>
