@@ -4,14 +4,14 @@ import { useForm } from 'react-hook-form'
 import { Loader2, Save, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { api } from '@/api'
+import DatePicker from '@/components/DatePicker'
 
 interface Preferences {
   scheduleIds: string[]
-  daysOfWeek: number[]
+  specificDates: string[]
   timeRange: { start: string; end: string }
   players: number
   checkIntervalMinutes: number
-  lookAheadDays: number
   forecastOffsetHours: number
   discordWebhookUrl: string
   reservationReminders: boolean
@@ -35,17 +35,14 @@ const SCHEDULES = [
   { id: '11077', name: 'Weequahic' },
 ]
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
 const INTERVALS = [5, 10, 15, 20, 30, 60]
 
 const DEFAULT: Preferences = {
   scheduleIds: ['11078'],
-  daysOfWeek: [0, 6],
+  specificDates: [],
   timeRange: { start: '07:00', end: '10:00' },
   players: 1,
   checkIntervalMinutes: 30,
-  lookAheadDays: 7,
   forecastOffsetHours: 0,
   discordWebhookUrl: '',
   reservationReminders: true,
@@ -97,12 +94,25 @@ const Preferences: React.FC = () => {
   })
 
   const watchedScheduleIds = watch('scheduleIds') ?? []
-  const watchedDays = watch('daysOfWeek') ?? []
+  const watchedDates = watch('specificDates') ?? []
   const watchedWebhook = watch('discordWebhookUrl')
 
   function toggleArrayValue<T>(arr: T[], val: T): T[] {
     return arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val]
   }
+
+  // Prune past dates when preferences load
+  useEffect(() => {
+    if (watchedDates.length > 0) {
+      const today = new Date().toISOString().split('T')[0]!
+      const future = watchedDates.filter(d => d >= today)
+      if (future.length !== watchedDates.length) {
+        setValue('specificDates', future, { shouldDirty: true })
+      }
+    }
+  // Only run on initial load, not on every change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefsRes])
 
   if (isLoading) {
     return (
@@ -139,25 +149,18 @@ const Preferences: React.FC = () => {
           </div>
         </div>
 
-        {/* Days of week */}
+        {/* Dates to monitor */}
         <div className="card">
-          <h2 className="text-base font-medium text-gray-900 mb-3">Days of Week</h2>
-          <div className="flex flex-wrap gap-2">
-            {DAYS.map((day, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => setValue('daysOfWeek', toggleArrayValue(watchedDays, i), { shouldDirty: true })}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
-                  watchedDays.includes(i)
-                    ? 'bg-primary-600 text-white border-primary-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                {day}
-              </button>
-            ))}
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="text-base font-medium text-gray-900">Dates to Monitor</h2>
+            {watchedDates.length > 0 && (
+              <span className="text-sm text-gray-500">{watchedDates.length} selected</span>
+            )}
           </div>
+          <DatePicker
+            selectedDates={watchedDates}
+            onChange={dates => setValue('specificDates', dates, { shouldDirty: true })}
+          />
         </div>
 
         {/* Time range + players */}
@@ -194,19 +197,13 @@ const Preferences: React.FC = () => {
         {/* Scheduling */}
         <div className="card">
           <h2 className="text-base font-medium text-gray-900 mb-3">Check Schedule</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Check every</label>
-              <select {...register('checkIntervalMinutes', { valueAsNumber: true })} className="input w-full">
-                {INTERVALS.map(n => (
-                  <option key={n} value={n}>{n} minutes</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Look ahead (days)</label>
-              <input type="number" min={1} max={14} {...register('lookAheadDays', { valueAsNumber: true })} className="input w-full" />
-            </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Check every</label>
+            <select {...register('checkIntervalMinutes', { valueAsNumber: true })} className="input w-full max-w-xs">
+              {INTERVALS.map(n => (
+                <option key={n} value={n}>{n} minutes</option>
+              ))}
+            </select>
           </div>
         </div>
 

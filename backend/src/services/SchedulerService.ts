@@ -29,11 +29,6 @@ interface TeeTimeNotificationTestRunResult {
   errors: string[]
 }
 
-function addDays(date: Date, days: number): Date {
-  const d = new Date(date)
-  d.setDate(d.getDate() + days)
-  return d
-}
 
 function toDateString(date: Date): string {
   return date.toISOString().split('T')[0]!
@@ -296,14 +291,8 @@ export class SchedulerService {
       return { sent: false, reason: 'No Discord webhook URL configured', totalFound: 0, notified: 0, errors }
     }
 
-    const dates: string[] = []
-    const today = new Date()
-    for (let i = 0; i <= (prefs.lookAheadDays || 7); i++) {
-      const d = addDays(today, i)
-      if (prefs.daysOfWeek.includes(d.getDay())) {
-        dates.push(toDateString(d))
-      }
-    }
+    const todayStr = toDateString(new Date())
+    const dates = (prefs.specificDates || []).filter(d => d >= todayStr)
 
     const matchingTimes: TeeTime[] = []
     for (const scheduleId of prefs.scheduleIds) {
@@ -396,15 +385,9 @@ export class SchedulerService {
         record.errors.push('No Discord webhook URL configured')
       }
 
-      // Build date list: today + lookAheadDays, filtered to configured daysOfWeek
-      const dates: string[] = []
-      const today = new Date()
-      for (let i = 0; i <= (prefs.lookAheadDays || 7); i++) {
-        const d = addDays(today, i)
-        if (prefs.daysOfWeek.includes(d.getDay())) {
-          dates.push(toDateString(d))
-        }
-      }
+      // Build date list from explicitly selected upcoming dates
+      const today = toDateString(new Date())
+      const dates = (prefs.specificDates || []).filter(d => d >= today)
 
       const newMatches: TeeTime[] = []
       const searchedTimes: TeeTime[] = []
@@ -520,19 +503,14 @@ function getWeekStart(date: Date): Date {
 }
 
 /**
- * Returns the ISO dates (YYYY-MM-DD) for all configured play days within a
- * calendar week starting at `weekStart` (Monday), given `daysOfWeek`.
+ * Returns the specific dates that fall within a calendar week starting at `weekStart` (Monday).
  */
-function getPlayDatesInWeek(weekStart: Date, daysOfWeek: number[]): string[] {
-  const dates: string[] = []
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart)
-    d.setDate(d.getDate() + i)
-    if (daysOfWeek.includes(d.getDay())) {
-      dates.push(toDateString(d))
-    }
-  }
-  return dates
+function getPlayDatesInWeek(weekStart: Date, specificDates: string[]): string[] {
+  const wsStr = toDateString(weekStart)
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekEnd.getDate() + 6)
+  const weStr = toDateString(weekEnd)
+  return specificDates.filter(d => d >= wsStr && d <= weStr)
 }
 
 /**
@@ -548,14 +526,14 @@ function getUpcomingWeekStarts(n: number): Date[] {
 }
 
 /**
- * Returns week-start strings for weeks that have no reservation on any
- * configured play day.
+ * Returns week-start strings for weeks that have at least one specific date selected
+ * but no reservation on any of those dates.
  */
-function findEmptyWeeks(reservations: Reservation[], weekStarts: Date[], daysOfWeek: number[]): string[] {
+function findEmptyWeeks(reservations: Reservation[], weekStarts: Date[], specificDates: string[]): string[] {
   const bookedDates = new Set(reservations.map(r => r.date))
   return weekStarts
     .filter(ws => {
-      const playDates = getPlayDatesInWeek(ws, daysOfWeek)
+      const playDates = getPlayDatesInWeek(ws, specificDates)
       return playDates.length > 0 && !playDates.some(d => bookedDates.has(d))
     })
     .map(ws => toDateString(ws))
@@ -632,7 +610,7 @@ export class ReservationSchedulerService {
 
     const reservations = await francisByrneAdapter.fetchReservations()
     const weekStarts = getUpcomingWeekStarts(3)
-    const emptyWeeks = findEmptyWeeks(reservations, weekStarts, prefs.daysOfWeek)
+    const emptyWeeks = findEmptyWeeks(reservations, weekStarts, prefs.specificDates || [])
 
     if (emptyWeeks.length > 0) {
       await notificationService.sendEmptyWeekAlert(prefs.discordWebhookUrl, emptyWeeks)
@@ -646,7 +624,7 @@ export class ReservationSchedulerService {
 
     const reservations = await francisByrneAdapter.fetchReservations()
     const weekStarts = getUpcomingWeekStarts(3)
-    const emptyWeeks = findEmptyWeeks(reservations, weekStarts, prefs.daysOfWeek)
+    const emptyWeeks = findEmptyWeeks(reservations, weekStarts, prefs.specificDates || [])
 
     await notificationService.sendWeeklyDigest(prefs.discordWebhookUrl, reservations, emptyWeeks)
     console.log(`[ReservationScheduler] Sent weekly digest (${reservations.length} reservations, ${emptyWeeks.length} empty weeks)`)

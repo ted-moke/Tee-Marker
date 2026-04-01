@@ -105,7 +105,7 @@ const Dashboard: React.FC = () => {
   const reservations = reservationsRes?.data ?? []
 
   const emptyWeeks = useMemo(() => {
-    if (!preferences?.daysOfWeek) return []
+    if (!preferences?.specificDates) return []
     const bookedDates = new Set(reservations.map(r => r.date))
 
     const getWeekStart = (d: Date): Date => {
@@ -122,19 +122,16 @@ const Dashboard: React.FC = () => {
     return Array.from({ length: 3 }, (_, i) => {
       const ws = new Date(thisWeek)
       ws.setDate(ws.getDate() + i * 7)
-      const playDates: string[] = []
-      for (let j = 0; j < 7; j++) {
-        const d = new Date(ws)
-        d.setDate(d.getDate() + j)
-        if (preferences.daysOfWeek.includes(d.getDay())) {
-          playDates.push(toISO(d))
-        }
-      }
+      const wsStr = toISO(ws)
+      const weDate = new Date(ws)
+      weDate.setDate(weDate.getDate() + 6)
+      const weStr = toISO(weDate)
+      const playDates = preferences.specificDates.filter(d => d >= wsStr && d <= weStr)
       if (playDates.length === 0 || playDates.some(d => bookedDates.has(d))) return null
       const label = ws.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      return { weekStart: toISO(ws), label }
+      return { weekStart: wsStr, label }
     }).filter((w): w is { weekStart: string; label: string } => w !== null)
-  }, [reservations, preferences?.daysOfWeek])
+  }, [reservations, preferences?.specificDates])
 
   const runNow = useMutation({
     mutationFn: () => api.post('/scheduler/run'),

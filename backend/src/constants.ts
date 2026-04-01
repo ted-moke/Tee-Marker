@@ -46,11 +46,10 @@ export const FORECAST_OFFSET_HOURS_MAX = 6
 
 export const DEFAULT_PREFERENCES = {
   scheduleIds: ['11078'],
-  daysOfWeek: [0, 6],
+  specificDates: [] as string[],
   timeRange: { start: '07:00', end: '10:00' },
   players: 1,
   checkIntervalMinutes: 30,
-  lookAheadDays: 7,
   forecastOffsetHours: 0,
   discordWebhookUrl: '',
   reservationReminders: true,

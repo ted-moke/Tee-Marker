@@ -20,7 +20,7 @@ export interface CheckRecord {
 
 export interface Preferences {
   scheduleIds: string[]
-  daysOfWeek: number[]
+  specificDates: string[]
   players: number
   forecastOffsetHours: number
   weatherThresholds: WeatherThresholds

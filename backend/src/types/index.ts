@@ -1,10 +1,9 @@
 export interface Preferences {
   scheduleIds: string[]
-  daysOfWeek: number[]
+  specificDates: string[]
   timeRange: { start: string; end: string }
   players: number
   checkIntervalMinutes: number
-  lookAheadDays: number
   forecastOffsetHours: number
   discordWebhookUrl: string
   weatherThresholds: WeatherThresholds

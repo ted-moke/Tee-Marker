@@ -19,10 +19,9 @@ const TeeTimeCalendarCard: React.FC<TeeTimeCalendarCardProps> = ({
   dateRange,
   calendarData,
 }) => {
-  const scheduledDays = dateRange.filter(date => {
-    const dayOfWeek = new Date(`${date}T00:00:00`).getDay()
-    return (preferences?.daysOfWeek ?? []).includes(dayOfWeek)
-  })
+  const scheduledDays = dateRange.filter(date =>
+    (preferences?.specificDates ?? []).includes(date)
+  )
 
   return (
     <div className="card p-3 sm:p-4">
