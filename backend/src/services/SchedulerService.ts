@@ -4,7 +4,7 @@ import { francisByrneAdapter } from '../adapters/FrancisByrneAdapter'
 import { notificationService } from './NotificationService'
 import { weatherService } from './WeatherService'
 import { COURSE_LOCATION_BY_SCHEDULE, DEFAULT_PREFERENCES } from '../constants'
-import { Preferences, CheckRecord, SchedulerStatus, TeeTime } from '../types'
+import { Preferences, CheckRecord, SchedulerStatus, TeeTime, Reservation } from '../types'
 import { resolveWeatherLocationFromTimes, resolveWeatherScheduleIdFromTimes } from '../utils/weatherLocation'
 import { buildDateKeysInTimeZone } from '../utils/dateKeys'
 
@@ -504,3 +504,153 @@ export class SchedulerService {
 }
 
 export const schedulerService = new SchedulerService()
+
+// ─── Reservation reminder helpers ─────────────────────────────────────────────
+
+/**
+ * Returns the Monday (week-start) for the week containing `date`.
+ */
+function getWeekStart(date: Date): Date {
+  const d = new Date(date)
+  const day = d.getDay() // 0=Sun
+  const diff = day === 0 ? -6 : 1 - day
+  d.setDate(d.getDate() + diff)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+/**
+ * Returns the ISO dates (YYYY-MM-DD) for all configured play days within a
+ * calendar week starting at `weekStart` (Monday), given `daysOfWeek`.
+ */
+function getPlayDatesInWeek(weekStart: Date, daysOfWeek: number[]): string[] {
+  const dates: string[] = []
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart)
+    d.setDate(d.getDate() + i)
+    if (daysOfWeek.includes(d.getDay())) {
+      dates.push(toDateString(d))
+    }
+  }
+  return dates
+}
+
+/**
+ * Returns Monday-start dates for the next `n` calendar weeks from today.
+ */
+function getUpcomingWeekStarts(n: number): Date[] {
+  const thisWeek = getWeekStart(new Date())
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(thisWeek)
+    d.setDate(d.getDate() + i * 7)
+    return d
+  })
+}
+
+/**
+ * Returns week-start strings for weeks that have no reservation on any
+ * configured play day.
+ */
+function findEmptyWeeks(reservations: Reservation[], weekStarts: Date[], daysOfWeek: number[]): string[] {
+  const bookedDates = new Set(reservations.map(r => r.date))
+  return weekStarts
+    .filter(ws => {
+      const playDates = getPlayDatesInWeek(ws, daysOfWeek)
+      return playDates.length > 0 && !playDates.some(d => bookedDates.has(d))
+    })
+    .map(ws => toDateString(ws))
+}
+
+async function loadPrefs(): Promise<Preferences | null> {
+  const prefsDoc = await db.collection('preferences').doc('user').get()
+  if (!prefsDoc.exists) return null
+  const rawPrefs = prefsDoc.data() as Partial<Preferences>
+  return {
+    ...DEFAULT_PREFERENCES,
+    ...rawPrefs,
+    weatherThresholds: {
+      ...DEFAULT_PREFERENCES.weatherThresholds,
+      ...(rawPrefs.weatherThresholds ?? {}),
+    },
+  }
+}
+
+// ─── Reservation Scheduler ─────────────────────────────────────────────────────
+
+export class ReservationSchedulerService {
+  private jobs: cron.ScheduledTask[] = []
+
+  start(): void {
+    this.stop()
+
+    // 6am daily: day-of reminder if reservation today
+    this.jobs.push(
+      cron.schedule('0 6 * * *', () => {
+        this.runDayOfReminder().catch(err => console.error('[ReservationScheduler] Day-of reminder failed:', err))
+      })
+    )
+
+    // 8am Mon (1), Thu (4), Sun (0): empty-week alert
+    this.jobs.push(
+      cron.schedule('0 8 * * 0,1,4', () => {
+        this.runEmptyWeekAlert().catch(err => console.error('[ReservationScheduler] Empty-week alert failed:', err))
+      })
+    )
+
+    // 9am Monday: weekly digest
+    this.jobs.push(
+      cron.schedule('0 9 * * 1', () => {
+        this.runWeeklyDigest().catch(err => console.error('[ReservationScheduler] Weekly digest failed:', err))
+      })
+    )
+
+    console.log('[ReservationScheduler] Started (day-of @6am, empty-week @8am Mon/Thu/Sun, digest @9am Mon)')
+  }
+
+  stop(): void {
+    for (const job of this.jobs) job.stop()
+    this.jobs = []
+  }
+
+  async runDayOfReminder(): Promise<void> {
+    const prefs = await loadPrefs()
+    if (!prefs?.discordWebhookUrl || !prefs.reservationReminders) return
+
+    const todayStr = toDateString(new Date())
+    const reservations = await francisByrneAdapter.fetchReservations()
+    const todaysReservations = reservations.filter(r => r.date === todayStr)
+
+    for (const r of todaysReservations) {
+      await notificationService.sendDayOfReminder(prefs.discordWebhookUrl, r)
+      console.log(`[ReservationScheduler] Sent day-of reminder for ${r.date} ${r.time} ${r.scheduleName}`)
+    }
+  }
+
+  async runEmptyWeekAlert(): Promise<void> {
+    const prefs = await loadPrefs()
+    if (!prefs?.discordWebhookUrl || !prefs.emptyWeekAlerts) return
+
+    const reservations = await francisByrneAdapter.fetchReservations()
+    const weekStarts = getUpcomingWeekStarts(3)
+    const emptyWeeks = findEmptyWeeks(reservations, weekStarts, prefs.daysOfWeek)
+
+    if (emptyWeeks.length > 0) {
+      await notificationService.sendEmptyWeekAlert(prefs.discordWebhookUrl, emptyWeeks)
+      console.log(`[ReservationScheduler] Sent empty-week alert for weeks: ${emptyWeeks.join(', ')}`)
+    }
+  }
+
+  async runWeeklyDigest(): Promise<void> {
+    const prefs = await loadPrefs()
+    if (!prefs?.discordWebhookUrl || !prefs.weeklyDigest) return
+
+    const reservations = await francisByrneAdapter.fetchReservations()
+    const weekStarts = getUpcomingWeekStarts(3)
+    const emptyWeeks = findEmptyWeeks(reservations, weekStarts, prefs.daysOfWeek)
+
+    await notificationService.sendWeeklyDigest(prefs.discordWebhookUrl, reservations, emptyWeeks)
+    console.log(`[ReservationScheduler] Sent weekly digest (${reservations.length} reservations, ${emptyWeeks.length} empty weeks)`)
+  }
+}
+
+export const reservationSchedulerService = new ReservationSchedulerService()

@@ -4,8 +4,9 @@ import toast from 'react-hot-toast'
 import { api } from '@/api'
 import SchedulerCard from '@/components/dashboard/SchedulerCard'
 import TeeTimeCalendarCard from '@/components/dashboard/TeeTimeCalendarCard'
+import ReservationsCard from '@/components/dashboard/ReservationsCard'
 import { getDateRange, parseTimeToMinutes } from '@/components/dashboard/utils'
-import type { SchedulerStatus, CheckRecord, Preferences, TeeTime, CalendarData } from '@/components/dashboard/types'
+import type { SchedulerStatus, CheckRecord, Preferences, TeeTime, CalendarData, Reservation } from '@/components/dashboard/types'
 
 const Dashboard: React.FC = () => {
   const queryClient = useQueryClient()
@@ -79,6 +80,62 @@ const Dashboard: React.FC = () => {
     },
   })
 
+  const { data: reservationsRes, isLoading: reservationsLoading } = useQuery({
+    queryKey: ['reservations'],
+    queryFn: () => api.get<{ success: boolean; data: Reservation[] }>('/reservations'),
+    staleTime: 5 * 60_000,
+    refetchInterval: 10 * 60_000,
+  })
+
+  const refreshReservations = useMutation({
+    mutationFn: () => api.post<{ success: boolean; data: Reservation[] }>('/reservations/refresh'),
+    onSuccess: (res) => {
+      queryClient.setQueryData(['reservations'], res)
+      toast.success('Reservations refreshed')
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  const sendDigest = useMutation({
+    mutationFn: () => api.post('/reservations/digest'),
+    onSuccess: () => toast.success('Digest sent to Discord'),
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  const reservations = reservationsRes?.data ?? []
+
+  const emptyWeeks = useMemo(() => {
+    if (!preferences?.daysOfWeek) return []
+    const bookedDates = new Set(reservations.map(r => r.date))
+
+    const getWeekStart = (d: Date): Date => {
+      const copy = new Date(d)
+      copy.setHours(0, 0, 0, 0)
+      const day = copy.getDay()
+      copy.setDate(copy.getDate() - (day === 0 ? 6 : day - 1))
+      return copy
+    }
+
+    const toISO = (d: Date) => d.toISOString().split('T')[0]!
+
+    const thisWeek = getWeekStart(new Date())
+    return Array.from({ length: 3 }, (_, i) => {
+      const ws = new Date(thisWeek)
+      ws.setDate(ws.getDate() + i * 7)
+      const playDates: string[] = []
+      for (let j = 0; j < 7; j++) {
+        const d = new Date(ws)
+        d.setDate(d.getDate() + j)
+        if (preferences.daysOfWeek.includes(d.getDay())) {
+          playDates.push(toISO(d))
+        }
+      }
+      if (playDates.length === 0 || playDates.some(d => bookedDates.has(d))) return null
+      const label = ws.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      return { weekStart: toISO(ws), label }
+    }).filter((w): w is { weekStart: string; label: string } => w !== null)
+  }, [reservations, preferences?.daysOfWeek])
+
   const runNow = useMutation({
     mutationFn: () => api.post('/scheduler/run'),
     onSuccess: () => {
@@ -139,6 +196,16 @@ const Dashboard: React.FC = () => {
         showRecentChecks={showRecentChecks}
         onToggleRecentChecks={() => setShowRecentChecks(prev => !prev)}
         history={history}
+      />
+
+      <ReservationsCard
+        reservations={reservationsRes?.data}
+        isLoading={reservationsLoading}
+        emptyWeeks={emptyWeeks}
+        onRefresh={() => refreshReservations.mutate()}
+        refreshPending={refreshReservations.isPending}
+        onSendDigest={() => sendDigest.mutate()}
+        digestPending={sendDigest.isPending}
       />
 
       <TeeTimeCalendarCard

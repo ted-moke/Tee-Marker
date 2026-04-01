@@ -66,6 +66,16 @@ export const DEFAULT_WEATHER_THRESHOLDS: WeatherThresholds = {
   tempBadHigh: 90,
 }
 
+export interface Reservation {
+  id: string
+  scheduleId: string
+  scheduleName: string
+  date: string      // YYYY-MM-DD
+  time: string
+  players: number
+  status: string
+}
+
 export interface CourseDaySummary {
   earliest: TeeTime | null
   additionalCount: number

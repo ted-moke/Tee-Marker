@@ -1,5 +1,5 @@
-import { TeeTime } from '../types'
-import { FOREUP_COURSE_BY_SCHEDULE } from '../constants'
+import { TeeTime, Reservation } from '../types'
+import { FOREUP_COURSE_BY_SCHEDULE, FRANCIS_BYRNE_SCHEDULES } from '../constants'
 import axios, { AxiosError, AxiosInstance } from 'axios'
 
 interface LoginResponse {
@@ -7,7 +7,15 @@ interface LoginResponse {
   user_id: number
   booking_class_ids: number[]
   person_id: string
+  reservations: any[]
 }
+
+interface ReservationCache {
+  reservations: Reservation[]
+  fetchedAt: number
+}
+
+const RESERVATION_CACHE_TTL_MS = 5 * 60 * 1000
 
 type TeeTimeResponse = Array<{
   time: string
@@ -39,6 +47,8 @@ export class FrancisByrneAdapter {
   private sessionCookies: string | null = null
   private bookingClassId: number = 49772
   private authenticatedScheduleId: string | null = null
+  private rawReservations: any[] = []
+  private reservationCache: ReservationCache | null = null
 
   constructor() {
     this.client = axios.create({
@@ -94,6 +104,8 @@ export class FrancisByrneAdapter {
       this.jwtToken = loginResponse.jwt
       this.bookingClassId = loginResponse.booking_class_ids[0] || 49772
       this.authenticatedScheduleId = scheduleId
+      this.rawReservations = Array.isArray(loginResponse.reservations) ? loginResponse.reservations : []
+      this.reservationCache = null // invalidate cache on fresh login
       console.log(
         `[ForeUp] Login successful (user_id: ${loginResponse.user_id}, courseId: ${courseId}, scheduleId: ${scheduleId}, bookingClassId: ${this.bookingClassId}, hasJwt: ${Boolean(this.jwtToken)}, cookieCount: ${setCookie?.length || 0})`
       )
@@ -231,6 +243,67 @@ export class FrancisByrneAdapter {
         }
       }
       throw error
+    }
+  }
+
+  async fetchReservations(forceRefresh = false): Promise<Reservation[]> {
+    const now = Date.now()
+    if (!forceRefresh && this.reservationCache && now - this.reservationCache.fetchedAt < RESERVATION_CACHE_TTL_MS) {
+      return this.reservationCache.reservations
+    }
+
+    // Re-login to get fresh reservations from the login response
+    const scheduleId = this.authenticatedScheduleId || '11078'
+    await this.login(scheduleId)
+
+    const today = new Date().toISOString().split('T')[0]!
+    const reservations = this.rawReservations
+      .map(r => this.mapReservation(r))
+      .filter((r): r is Reservation => r !== null && r.date >= today)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
+
+    if (this.rawReservations.length > 0) {
+      console.log(`[ForeUp] Mapped ${reservations.length}/${this.rawReservations.length} reservations (sample raw:`, JSON.stringify(this.rawReservations[0]), ')')
+    }
+
+    this.reservationCache = { reservations, fetchedAt: now }
+    return reservations
+  }
+
+  private mapReservation(raw: any): Reservation | null {
+    const scheduleId = String(raw.teesheet_id || raw.schedule_id || '')
+    const scheduleName = FRANCIS_BYRNE_SCHEDULES[scheduleId] || String(raw.course_name || 'Unknown Course')
+
+    // Actual Foreup fields: start_datetime = "2026-04-08 07:36:00", time = "2026-04-08 07:36"
+    // Neither raw.date nor raw.teetime_date exist — use start_datetime or time (both are full datetimes)
+    const rawDatetime = String(raw.start_datetime || raw.time || raw.date || raw.teetime_date || raw.tee_date || '')
+    const isoMatch = rawDatetime.match(/^(\d{4}-\d{2}-\d{2})/)
+    const mdyMatch = rawDatetime.match(/^(\d{2})-(\d{2})-(\d{4})/)
+    let date: string
+    if (isoMatch) {
+      date = isoMatch[1]!
+    } else if (mdyMatch) {
+      date = `${mdyMatch[3]}-${mdyMatch[1]}-${mdyMatch[2]}`
+    } else {
+      return null
+    }
+
+    // Extract HH:MM from the datetime string (raw.time is "YYYY-MM-DD HH:MM", not just a time)
+    const timeMatch = rawDatetime.match(/\s(\d{1,2}:\d{2})(?::\d{2})?$/)
+    const time = timeMatch ? timeMatch[1]! : ''
+
+    // Status: derive from date_cancelled (Foreup returns "0000-00-00 00:00:00" when not cancelled)
+    const cancelled = raw.date_cancelled && raw.date_cancelled !== '0000-00-00 00:00:00'
+    const status = cancelled ? 'cancelled' : String(raw.status || 'confirmed')
+
+    return {
+      id: String(raw.teetime_id || raw.TTID || raw.tee_time_id || raw.id || `${scheduleId}_${date}_${time}`),
+      scheduleId,
+      scheduleName,
+      date,
+      time,
+      players: parseInt(String(raw.player_count || raw.players || raw.num_players || '1'), 10) || 1,
+      status,
     }
   }
 

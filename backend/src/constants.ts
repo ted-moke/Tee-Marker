@@ -53,6 +53,9 @@ export const DEFAULT_PREFERENCES = {
   lookAheadDays: 7,
   forecastOffsetHours: 0,
   discordWebhookUrl: '',
+  reservationReminders: true,
+  weeklyDigest: true,
+  emptyWeekAlerts: true,
   weatherThresholds: {
     rainGoodMax: 20,
     rainBadMin: 60,

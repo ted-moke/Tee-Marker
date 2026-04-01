@@ -14,6 +14,9 @@ interface Preferences {
   lookAheadDays: number
   forecastOffsetHours: number
   discordWebhookUrl: string
+  reservationReminders: boolean
+  weeklyDigest: boolean
+  emptyWeekAlerts: boolean
   weatherThresholds: {
     rainGoodMax: number
     rainBadMin: number
@@ -45,6 +48,9 @@ const DEFAULT: Preferences = {
   lookAheadDays: 7,
   forecastOffsetHours: 0,
   discordWebhookUrl: '',
+  reservationReminders: true,
+  weeklyDigest: true,
+  emptyWeekAlerts: true,
   weatherThresholds: {
     rainGoodMax: 20,
     rainBadMin: 60,
@@ -240,6 +246,35 @@ const Preferences: React.FC = () => {
               <label className="block text-sm text-gray-600 mb-1">Temp red if above (F)</label>
               <input type="number" {...register('weatherThresholds.tempBadHigh', { valueAsNumber: true })} className="input w-full" />
             </div>
+          </div>
+        </div>
+
+        {/* Reservation reminders */}
+        <div className="card">
+          <h2 className="text-base font-medium text-gray-900 mb-3">Reservation Reminders</h2>
+          <p className="text-xs text-gray-500 mb-3">Sent to your Discord webhook.</p>
+          <div className="space-y-3">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-primary-600" {...register('reservationReminders')} />
+              <div>
+                <span className="text-sm text-gray-700 font-medium">Day-of reminder</span>
+                <p className="text-xs text-gray-400">Discord message at 6am on days you have a tee time booked</p>
+              </div>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-primary-600" {...register('weeklyDigest')} />
+              <div>
+                <span className="text-sm text-gray-700 font-medium">Monday digest</span>
+                <p className="text-xs text-gray-400">Weekly summary of upcoming bookings + unbooked weeks, sent Monday at 9am</p>
+              </div>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-primary-600" {...register('emptyWeekAlerts')} />
+              <div>
+                <span className="text-sm text-gray-700 font-medium">Empty-week alerts</span>
+                <p className="text-xs text-gray-400">Alert Mon/Thu/Sun at 8am when a coming week has no tee time booked on your configured play days</p>
+              </div>
+            </label>
           </div>
         </div>
 

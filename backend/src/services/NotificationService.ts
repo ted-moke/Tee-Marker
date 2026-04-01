@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { DailyWeatherSummaryDay, TeeTime, WeatherThresholds } from '../types'
+import { DailyWeatherSummaryDay, Reservation, TeeTime, WeatherThresholds } from '../types'
 import { FRANCIS_BYRNE_SCHEDULES } from '../constants'
 
 const DISCORD_DESCRIPTION_LIMIT = 4000
@@ -218,6 +218,69 @@ export class NotificationService {
     if (value < thresholds.tempBadLow || value > thresholds.tempBadHigh) return '🔴'
     if (value >= thresholds.tempGoodMin && value <= thresholds.tempGoodMax) return '🟢'
     return '🟡'
+  }
+
+  async sendDayOfReminder(webhookUrl: string, reservation: Reservation): Promise<void> {
+    if (!webhookUrl) throw new Error('No Discord webhook URL configured')
+    const timeLabel = this.formatTime(reservation.time)
+    const embed = {
+      title: `⛳ Tee time today — ${timeLabel} at ${reservation.scheduleName}`,
+      color: 0x22c55e,
+      description: `${reservation.players} player${reservation.players !== 1 ? 's' : ''}`,
+      timestamp: new Date().toISOString(),
+    }
+    await axios.post(webhookUrl, { embeds: [embed] })
+  }
+
+  async sendWeeklyDigest(webhookUrl: string, reservations: Reservation[], emptyWeekStarts: string[]): Promise<void> {
+    if (!webhookUrl) throw new Error('No Discord webhook URL configured')
+
+    const lines: string[] = []
+
+    if (reservations.length > 0) {
+      for (const r of reservations) {
+        const dayLabel = this.formatRelativeDayLabel(r.date)
+        const timeLabel = this.formatTime(r.time)
+        lines.push(`• ${dayLabel} ${timeLabel} — ${r.scheduleName}`)
+      }
+    } else {
+      lines.push('No upcoming tee times booked.')
+    }
+
+    if (emptyWeekStarts.length > 0) {
+      lines.push('')
+      for (const weekStart of emptyWeekStarts) {
+        const d = new Date(`${weekStart}T00:00:00`)
+        const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        lines.push(`⚠️ No tee time booked for week of ${label}`)
+      }
+    }
+
+    const embed = {
+      title: '📅 Weekly Tee Time Digest',
+      color: 0x3b82f6,
+      description: lines.join('\n'),
+      timestamp: new Date().toISOString(),
+    }
+    await axios.post(webhookUrl, { embeds: [embed] })
+  }
+
+  async sendEmptyWeekAlert(webhookUrl: string, emptyWeekStarts: string[]): Promise<void> {
+    if (!webhookUrl) throw new Error('No Discord webhook URL configured')
+    if (emptyWeekStarts.length === 0) return
+
+    const labels = emptyWeekStarts.map(ws => {
+      const d = new Date(`${ws}T00:00:00`)
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    })
+
+    const embed = {
+      title: '⚠️ No tee time booked',
+      color: 0xf59e0b,
+      description: labels.map(l => `• Week of ${l} — no reservation found`).join('\n'),
+      timestamp: new Date().toISOString(),
+    }
+    await axios.post(webhookUrl, { embeds: [embed] })
   }
 
   async testWebhook(webhookUrl: string): Promise<boolean> {

@@ -9,7 +9,8 @@ import preferencesRoutes from './routes/preferences'
 import schedulerRoutes from './routes/scheduler'
 import historyRoutes from './routes/history'
 import teeTimeRoutes from './routes/teeTimes'
-import { schedulerService } from './services/SchedulerService'
+import reservationsRoutes from './routes/reservations'
+import { schedulerService, reservationSchedulerService } from './services/SchedulerService'
 import { Preferences } from './types'
 import { DEFAULT_PREFERENCES } from './constants'
 import 'dotenv/config'
@@ -73,6 +74,7 @@ app.use('/api/preferences', preferencesRoutes)
 app.use('/api', schedulerRoutes)
 app.use('/api/history', historyRoutes)
 app.use('/api/tee-times', teeTimeRoutes)
+app.use('/api/reservations', reservationsRoutes)
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Error:', err)
@@ -105,6 +107,8 @@ app.listen(PORT, async () => {
       : DEFAULT_PREFERENCES.checkIntervalMinutes
     schedulerService.start(interval)
     console.log(`Scheduler started (every ${interval} min)`)
+    reservationSchedulerService.start()
+    console.log('Reservation scheduler started')
   } catch (err: any) {
     console.error('Failed to start scheduler:', JSON.stringify(err, Object.getOwnPropertyNames(err)))
   }

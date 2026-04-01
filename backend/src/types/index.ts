@@ -8,6 +8,19 @@ export interface Preferences {
   forecastOffsetHours: number
   discordWebhookUrl: string
   weatherThresholds: WeatherThresholds
+  reservationReminders: boolean
+  weeklyDigest: boolean
+  emptyWeekAlerts: boolean
+}
+
+export interface Reservation {
+  id: string
+  scheduleId: string
+  scheduleName: string
+  date: string      // YYYY-MM-DD
+  time: string      // raw time string from Foreup
+  players: number
+  status: string
 }
 
 export interface WeatherThresholds {
