@@ -11,12 +11,15 @@ export interface Preferences {
   weeklyDigest: boolean
 }
 
+export type TeeTimeSource = 'foreup' | 'ezlinks'
+
 export interface Reservation {
   id: string
+  source: TeeTimeSource
   scheduleId: string
   scheduleName: string
   date: string      // YYYY-MM-DD
-  time: string      // raw time string from Foreup
+  time: string      // raw time string from the provider
   players: number
   status: string
 }
@@ -73,7 +76,9 @@ export interface DailyWeatherSummaryDay {
 
 export interface TeeTime {
   id: string
+  source: TeeTimeSource
   scheduleId: string
+  scheduleName?: string
   date: string
   time: string
   availableSpots: number

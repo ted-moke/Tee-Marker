@@ -4,7 +4,7 @@ import { schedulerService } from '../services/SchedulerService'
 import { notificationService } from '../services/NotificationService'
 import { Preferences } from '../types'
 import {
-  FRANCIS_BYRNE_SCHEDULES,
+  ALL_SCHEDULE_NAMES,
   VALID_CHECK_INTERVALS,
   DEFAULT_PREFERENCES,
   FORECAST_OFFSET_HOURS_MIN,
@@ -37,7 +37,7 @@ router.put('/', async (req: Request, res: Response): Promise<void> => {
 
     // Validate
     if (body.scheduleIds) {
-      const validIds = Object.keys(FRANCIS_BYRNE_SCHEDULES)
+      const validIds = Object.keys(ALL_SCHEDULE_NAMES)
       if (!body.scheduleIds.every(id => validIds.includes(id))) {
         res.status(400).json({ success: false, error: 'Invalid scheduleIds' })
         return

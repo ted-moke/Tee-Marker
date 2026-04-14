@@ -1,10 +1,23 @@
 import * as cron from 'node-cron'
 import { db } from '../index'
 import { francisByrneAdapter } from '../adapters/FrancisByrneAdapter'
+import { ezLinksAdapter } from '../adapters/EzLinksAdapter'
 import { notificationService } from './NotificationService'
 import { weatherService } from './WeatherService'
-import { COURSE_LOCATION_BY_SCHEDULE, DEFAULT_PREFERENCES } from '../constants'
-import { Preferences, CheckRecord, SchedulerStatus, TeeTime, Reservation } from '../types'
+import { COURSE_LOCATION_BY_SCHEDULE, DEFAULT_PREFERENCES, SCHEDULE_SOURCE } from '../constants'
+import { Preferences, CheckRecord, SchedulerStatus, TeeTime, Reservation, TeeTimeSource } from '../types'
+
+function sourceFor(scheduleId: string): TeeTimeSource {
+  return SCHEDULE_SOURCE[scheduleId] ?? 'foreup'
+}
+
+function adapterFor(scheduleId: string) {
+  return sourceFor(scheduleId) === 'ezlinks' ? ezLinksAdapter : francisByrneAdapter
+}
+
+function dedupKey(t: Pick<TeeTime, 'source' | 'scheduleId' | 'date' | 'time'>): string {
+  return `${t.source}_${t.scheduleId}_${t.date}_${t.time}`
+}
 import { resolveWeatherLocationFromTimes, resolveWeatherScheduleIdFromTimes } from '../utils/weatherLocation'
 import { buildDateKeysInTimeZone } from '../utils/dateKeys'
 
@@ -236,7 +249,7 @@ export class SchedulerService {
     const allTimes: TeeTime[] = []
     for (const scheduleId of prefs.scheduleIds) {
       try {
-        const times = await francisByrneAdapter.searchTeeTimes([scheduleId], {
+        const times = await adapterFor(scheduleId).searchTeeTimes([scheduleId], {
           date,
           players: prefs.players,
         })
@@ -298,7 +311,7 @@ export class SchedulerService {
     for (const scheduleId of prefs.scheduleIds) {
       for (const date of dates) {
         try {
-          const times = await francisByrneAdapter.searchTeeTimes([scheduleId], {
+          const times = await adapterFor(scheduleId).searchTeeTimes([scheduleId], {
             date,
             players: prefs.players,
           })
@@ -399,8 +412,8 @@ export class SchedulerService {
       for (const scheduleId of prefs.scheduleIds) {
         for (const date of dates) {
           try {
-            // Query one schedule at a time so ForeUp uses the right primary schedule_id context.
-            const times = await francisByrneAdapter.searchTeeTimes([scheduleId], {
+            // Query one schedule at a time so each provider uses the right primary context.
+            const times = await adapterFor(scheduleId).searchTeeTimes([scheduleId], {
               date,
               players: prefs.players,
             })
@@ -422,7 +435,7 @@ export class SchedulerService {
             record.timesFound += inWindowWithWeather.length
 
             for (const t of inWindowWithWeather) {
-              const dedupId = `${t.scheduleId}_${t.date}_${t.time}`
+              const dedupId = dedupKey(t)
               const existing = await db.collection('notifiedTimes').doc(dedupId).get()
               if (!existing.exists) {
                 newMatches.push(t)
@@ -450,8 +463,9 @@ export class SchedulerService {
           // Write dedup records
           const batch = db.batch()
           for (const t of newMatches) {
-            const dedupId = `${t.scheduleId}_${t.date}_${t.time}`
+            const dedupId = dedupKey(t)
             batch.set(db.collection('notifiedTimes').doc(dedupId), {
+              source: t.source,
               scheduleId: t.scheduleId,
               date: t.date,
               time: t.time,
@@ -539,6 +553,22 @@ function findEmptyWeeks(reservations: Reservation[], weekStarts: Date[], specifi
     .map(ws => toDateString(ws))
 }
 
+export async function fetchAllReservations(forceRefresh = false): Promise<Reservation[]> {
+  const results = await Promise.allSettled([
+    francisByrneAdapter.fetchReservations(forceRefresh),
+    ezLinksAdapter.fetchReservations(forceRefresh),
+  ])
+  const out: Reservation[] = []
+  for (const r of results) {
+    if (r.status === 'fulfilled') {
+      out.push(...r.value)
+    } else {
+      console.warn('[Reservations] provider fetch failed:', r.reason?.message ?? r.reason)
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
+}
+
 async function loadPrefs(): Promise<Preferences | null> {
   const prefsDoc = await db.collection('preferences').doc('user').get()
   if (!prefsDoc.exists) return null
@@ -588,7 +618,7 @@ export class ReservationSchedulerService {
     if (!prefs?.discordWebhookUrl || !prefs.reservationReminders) return
 
     const todayStr = toDateString(new Date())
-    const reservations = await francisByrneAdapter.fetchReservations()
+    const reservations = await fetchAllReservations()
     const todaysReservations = reservations.filter(r => r.date === todayStr)
 
     for (const r of todaysReservations) {
@@ -601,7 +631,7 @@ export class ReservationSchedulerService {
     const prefs = await loadPrefs()
     if (!prefs?.discordWebhookUrl || !prefs.weeklyDigest) return
 
-    const reservations = await francisByrneAdapter.fetchReservations()
+    const reservations = await fetchAllReservations()
     const weekStarts = getUpcomingWeekStarts(3)
     const emptyWeeks = findEmptyWeeks(reservations, weekStarts, prefs.specificDates || [])
 

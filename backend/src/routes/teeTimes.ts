@@ -1,9 +1,10 @@
 import { Router, Request, Response } from 'express'
 import { db } from '../index'
 import { francisByrneAdapter } from '../adapters/FrancisByrneAdapter'
+import { ezLinksAdapter } from '../adapters/EzLinksAdapter'
 import { weatherService } from '../services/WeatherService'
 import { Preferences, TeeTime } from '../types'
-import { DEFAULT_PREFERENCES } from '../constants'
+import { DEFAULT_PREFERENCES, SCHEDULE_SOURCE } from '../constants'
 import { resolveWeatherLocationFromTimes } from '../utils/weatherLocation'
 
 const router = Router()
@@ -19,8 +20,9 @@ router.get('/search', async (req: Request, res: Response): Promise<void> => {
 
     const schedule = scheduleId as string
     const searchDate = date as string
-    const times = await francisByrneAdapter.searchTeeTimes(
-      [scheduleId as string],
+    const adapter = SCHEDULE_SOURCE[schedule] === 'ezlinks' ? ezLinksAdapter : francisByrneAdapter
+    const times = await adapter.searchTeeTimes(
+      [schedule],
       {
         date: searchDate,
         players: players ? parseInt(players as string) : 1,

@@ -1,3 +1,5 @@
+import type { TeeTimeSource } from './types'
+
 export const FRANCIS_BYRNE_SCHEDULES: Record<string, string> = {
   '11078': 'Francis Byrne',
   '11075': 'Hendricks Field',
@@ -10,6 +12,23 @@ export const FOREUP_COURSE_BY_SCHEDULE: Record<string, string> = {
   '11075': '22526', // Hendricks Field
 }
 
+// EzLinks (Union County) — courseIDs from unioncounty14day.ezlinksgolf.com
+export const EZLINKS_COURSES: Record<string, string> = {
+  '4549': 'Galloping Hill GC',
+  '4551': 'Galloping Hill GC (Learning Center 9)',
+  '4545': 'Ash Brook GC',
+}
+
+export const SCHEDULE_SOURCE: Record<string, TeeTimeSource> = {
+  ...Object.fromEntries(Object.keys(FRANCIS_BYRNE_SCHEDULES).map(id => [id, 'foreup' as TeeTimeSource])),
+  ...Object.fromEntries(Object.keys(EZLINKS_COURSES).map(id => [id, 'ezlinks' as TeeTimeSource])),
+}
+
+export const ALL_SCHEDULE_NAMES: Record<string, string> = {
+  ...FRANCIS_BYRNE_SCHEDULES,
+  ...EZLINKS_COURSES,
+}
+
 export interface CourseLocation {
   latitude: number
   longitude: number
@@ -17,10 +36,14 @@ export interface CourseLocation {
 }
 
 export const COURSE_LOCATION_BY_SCHEDULE: Record<string, CourseLocation> = {
-  // Newark, NJ municipal courses
+  // Newark, NJ municipal courses (Foreup)
   '11078': { latitude: 40.7253, longitude: -74.2283, timezone: 'America/New_York' }, // Francis Byrne
   '11077': { latitude: 40.7083, longitude: -74.2218, timezone: 'America/New_York' }, // Weequahic
   '11075': { latitude: 40.7197, longitude: -74.1934, timezone: 'America/New_York' }, // Hendricks Field
+  // Union County, NJ courses (EzLinks)
+  '4549': { latitude: 40.6756, longitude: -74.2779, timezone: 'America/New_York' }, // Galloping Hill GC
+  '4551': { latitude: 40.6756, longitude: -74.2779, timezone: 'America/New_York' }, // Galloping Hill Learning Center 9
+  '4545': { latitude: 40.6294, longitude: -74.3796, timezone: 'America/New_York' }, // Ash Brook GC
 }
 
 export const OPEN_METEO_BASE_URL = 'https://api.open-meteo.com/v1/forecast'

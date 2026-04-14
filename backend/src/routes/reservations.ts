@@ -1,12 +1,11 @@
 import { Router } from 'express'
-import { francisByrneAdapter } from '../adapters/FrancisByrneAdapter'
-import { reservationSchedulerService } from '../services/SchedulerService'
+import { fetchAllReservations, reservationSchedulerService } from '../services/SchedulerService'
 
 const router = Router()
 
 router.get('/', async (_req, res, next) => {
   try {
-    const reservations = await francisByrneAdapter.fetchReservations()
+    const reservations = await fetchAllReservations()
     res.json({ success: true, data: reservations })
   } catch (err) {
     next(err)
@@ -15,7 +14,7 @@ router.get('/', async (_req, res, next) => {
 
 router.post('/refresh', async (_req, res, next) => {
   try {
-    const reservations = await francisByrneAdapter.fetchReservations(true)
+    const reservations = await fetchAllReservations(true)
     res.json({ success: true, data: reservations })
   } catch (err) {
     next(err)

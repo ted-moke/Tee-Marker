@@ -28,10 +28,23 @@ interface Preferences {
   }
 }
 
-const SCHEDULES = [
-  { id: '11078', name: 'Francis Byrne' },
-  { id: '11075', name: 'Hendricks Field' },
-  { id: '11077', name: 'Weequahic' },
+const SCHEDULE_GROUPS: { group: string; schedules: { id: string; name: string }[] }[] = [
+  {
+    group: 'Foreup – Essex County',
+    schedules: [
+      { id: '11078', name: 'Francis Byrne' },
+      { id: '11075', name: 'Hendricks Field' },
+      { id: '11077', name: 'Weequahic' },
+    ],
+  },
+  {
+    group: 'EzLinks – Union County',
+    schedules: [
+      { id: '4549', name: 'Galloping Hill GC' },
+      { id: '4551', name: 'Galloping Hill GC (Learning Center 9)' },
+      { id: '4545', name: 'Ash Brook GC' },
+    ],
+  },
 ]
 
 const INTERVALS = [5, 10, 15, 20, 30, 60]
@@ -132,17 +145,24 @@ const Preferences: React.FC = () => {
         {/* Schedules */}
         <div className="card">
           <h2 className="text-base font-medium text-gray-900 mb-3">Courses to Monitor</h2>
-          <div className="space-y-2">
-            {SCHEDULES.map(s => (
-              <label key={s.id} className="flex items-center space-x-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-gray-300 text-primary-600"
-                  checked={watchedScheduleIds.includes(s.id)}
-                  onChange={() => setValue('scheduleIds', toggleArrayValue(watchedScheduleIds, s.id), { shouldDirty: true })}
-                />
-                <span className="text-sm text-gray-700">{s.name}</span>
-              </label>
+          <div className="space-y-4">
+            {SCHEDULE_GROUPS.map(({ group, schedules }) => (
+              <div key={group}>
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">{group}</div>
+                <div className="space-y-2">
+                  {schedules.map(s => (
+                    <label key={s.id} className="flex items-center space-x-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600"
+                        checked={watchedScheduleIds.includes(s.id)}
+                        onChange={() => setValue('scheduleIds', toggleArrayValue(watchedScheduleIds, s.id), { shouldDirty: true })}
+                      />
+                      <span className="text-sm text-gray-700">{s.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </div>

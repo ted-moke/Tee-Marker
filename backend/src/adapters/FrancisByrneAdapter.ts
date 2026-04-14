@@ -187,8 +187,10 @@ export class FrancisByrneAdapter {
         .map(time => {
           const parsed = parseFloat(time.price)
           return {
-            id: `${time.schedule_id}_${time.time}_${params.date}`,
+            id: `foreup_${time.schedule_id}_${time.time}_${params.date}`,
+            source: 'foreup',
             scheduleId: time.schedule_id.toString(),
+            scheduleName: FRANCIS_BYRNE_SCHEDULES[time.schedule_id.toString()],
             date: params.date,
             time: time.time,
             availableSpots: time.available_spots,
@@ -298,6 +300,7 @@ export class FrancisByrneAdapter {
 
     return {
       id: String(raw.teetime_id || raw.TTID || raw.tee_time_id || raw.id || `${scheduleId}_${date}_${time}`),
+      source: 'foreup',
       scheduleId,
       scheduleName,
       date,

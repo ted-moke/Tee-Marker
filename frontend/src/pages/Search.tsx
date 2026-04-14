@@ -6,10 +6,23 @@ import WeatherMetrics from '@/components/weather/WeatherMetrics'
 import { DEFAULT_WEATHER_THRESHOLDS } from '@/components/dashboard/types'
 import type { TeeTime, Preferences } from '@/components/dashboard/types'
 
-const SCHEDULES = [
-  { id: '11078', name: 'Francis Byrne' },
-  { id: '11075', name: 'Hendricks Field' },
-  { id: '11077', name: 'Weequahic' },
+const SCHEDULE_GROUPS: { group: string; schedules: { id: string; name: string }[] }[] = [
+  {
+    group: 'Foreup – Essex County',
+    schedules: [
+      { id: '11078', name: 'Francis Byrne' },
+      { id: '11075', name: 'Hendricks Field' },
+      { id: '11077', name: 'Weequahic' },
+    ],
+  },
+  {
+    group: 'EzLinks – Union County',
+    schedules: [
+      { id: '4549', name: 'Galloping Hill GC' },
+      { id: '4551', name: 'Galloping Hill GC (Learning Center 9)' },
+      { id: '4545', name: 'Ash Brook GC' },
+    ],
+  },
 ]
 
 function todayStr(): string {
@@ -60,8 +73,12 @@ const Search: React.FC = () => {
               onChange={e => setScheduleId(e.target.value)}
               className="input"
             >
-              {SCHEDULES.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
+              {SCHEDULE_GROUPS.map(({ group, schedules }) => (
+                <optgroup key={group} label={group}>
+                  {schedules.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
