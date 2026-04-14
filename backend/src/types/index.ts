@@ -9,7 +9,6 @@ export interface Preferences {
   weatherThresholds: WeatherThresholds
   reservationReminders: boolean
   weeklyDigest: boolean
-  emptyWeekAlerts: boolean
 }
 
 export interface Reservation {

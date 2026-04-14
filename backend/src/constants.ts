@@ -54,7 +54,6 @@ export const DEFAULT_PREFERENCES = {
   discordWebhookUrl: '',
   reservationReminders: true,
   weeklyDigest: true,
-  emptyWeekAlerts: true,
   weatherThresholds: {
     rainGoodMax: 20,
     rainBadMin: 60,

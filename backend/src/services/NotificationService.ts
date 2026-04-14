@@ -286,24 +286,6 @@ export class NotificationService {
     await axios.post(webhookUrl, { embeds: [embed] })
   }
 
-  async sendEmptyWeekAlert(webhookUrl: string, emptyWeekStarts: string[]): Promise<void> {
-    if (!webhookUrl) throw new Error('No Discord webhook URL configured')
-    if (emptyWeekStarts.length === 0) return
-
-    const labels = emptyWeekStarts.map(ws => {
-      const d = new Date(`${ws}T00:00:00`)
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    })
-
-    const embed = {
-      title: '⚠️ No tee time booked',
-      color: 0xf59e0b,
-      description: labels.map(l => `• Week of ${l} — no reservation found`).join('\n'),
-      timestamp: new Date().toISOString(),
-    }
-    await axios.post(webhookUrl, { embeds: [embed] })
-  }
-
   async testWebhook(webhookUrl: string): Promise<boolean> {
     try {
       await axios.post(webhookUrl, {

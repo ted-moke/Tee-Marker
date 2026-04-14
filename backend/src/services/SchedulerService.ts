@@ -568,21 +568,14 @@ export class ReservationSchedulerService {
       })
     )
 
-    // 8am Mon (1), Thu (4), Sun (0): empty-week alert
+    // 8am Mon (1), Thu (4), Sun (0): weekly digest
     this.jobs.push(
       cron.schedule('0 8 * * 0,1,4', () => {
-        this.runEmptyWeekAlert().catch(err => console.error('[ReservationScheduler] Empty-week alert failed:', err))
-      })
-    )
-
-    // 9am Monday: weekly digest
-    this.jobs.push(
-      cron.schedule('0 9 * * 1', () => {
         this.runWeeklyDigest().catch(err => console.error('[ReservationScheduler] Weekly digest failed:', err))
       })
     )
 
-    console.log('[ReservationScheduler] Started (day-of @6am, empty-week @8am Mon/Thu/Sun, digest @9am Mon)')
+    console.log('[ReservationScheduler] Started (day-of @6am, digest @8am Mon/Thu/Sun)')
   }
 
   stop(): void {
@@ -601,20 +594,6 @@ export class ReservationSchedulerService {
     for (const r of todaysReservations) {
       await notificationService.sendDayOfReminder(prefs.discordWebhookUrl, r)
       console.log(`[ReservationScheduler] Sent day-of reminder for ${r.date} ${r.time} ${r.scheduleName}`)
-    }
-  }
-
-  async runEmptyWeekAlert(): Promise<void> {
-    const prefs = await loadPrefs()
-    if (!prefs?.discordWebhookUrl || !prefs.emptyWeekAlerts) return
-
-    const reservations = await francisByrneAdapter.fetchReservations()
-    const weekStarts = getUpcomingWeekStarts(3)
-    const emptyWeeks = findEmptyWeeks(reservations, weekStarts, prefs.specificDates || [])
-
-    if (emptyWeeks.length > 0) {
-      await notificationService.sendEmptyWeekAlert(prefs.discordWebhookUrl, emptyWeeks)
-      console.log(`[ReservationScheduler] Sent empty-week alert for weeks: ${emptyWeeks.join(', ')}`)
     }
   }
 

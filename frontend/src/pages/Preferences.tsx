@@ -16,7 +16,6 @@ interface Preferences {
   discordWebhookUrl: string
   reservationReminders: boolean
   weeklyDigest: boolean
-  emptyWeekAlerts: boolean
   weatherThresholds: {
     rainGoodMax: number
     rainBadMin: number
@@ -47,7 +46,6 @@ const DEFAULT: Preferences = {
   discordWebhookUrl: '',
   reservationReminders: true,
   weeklyDigest: true,
-  emptyWeekAlerts: true,
   weatherThresholds: {
     rainGoodMax: 20,
     rainBadMin: 60,
@@ -261,15 +259,8 @@ const Preferences: React.FC = () => {
             <label className="flex items-center gap-3 cursor-pointer">
               <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-primary-600" {...register('weeklyDigest')} />
               <div>
-                <span className="text-sm text-gray-700 font-medium">Monday digest</span>
-                <p className="text-xs text-gray-400">Weekly summary of upcoming bookings + unbooked weeks, sent Monday at 9am</p>
-              </div>
-            </label>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-primary-600" {...register('emptyWeekAlerts')} />
-              <div>
-                <span className="text-sm text-gray-700 font-medium">Empty-week alerts</span>
-                <p className="text-xs text-gray-400">Alert Mon/Thu/Sun at 8am when a coming week has no tee time booked on your configured play days</p>
+                <span className="text-sm text-gray-700 font-medium">Weekly digest</span>
+                <p className="text-xs text-gray-400">Summary of upcoming bookings + unbooked weeks, sent Mon/Thu/Sun at 8am</p>
               </div>
             </label>
           </div>
