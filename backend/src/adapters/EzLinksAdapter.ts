@@ -101,11 +101,26 @@ function parseCookieOverride(raw: string): Record<string, string> {
   return out
 }
 
+const REQUEST_SPACING_MS = 3000
+const MAX_429_RETRIES = 4
+const RETRY_BASE_MS = 1500
+
 export class EzLinksAdapter {
   private session: Session | null = null
   private sessionReady = false
   private contactId: number | null = null
   private reservationCache: ReservationCache | null = null
+  private requestChain: Promise<unknown> = Promise.resolve()
+
+  private serialize<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.requestChain.then(async () => {
+      const result = await fn()
+      await new Promise(r => setTimeout(r, REQUEST_SPACING_MS))
+      return result
+    })
+    this.requestChain = next.catch(() => undefined)
+    return next
+  }
 
   private async getSession(): Promise<Session> {
     if (this.session) return this.session
@@ -169,6 +184,10 @@ export class EzLinksAdapter {
   }
 
   async searchTeeTimes(courseIds: string[], params: SearchParams): Promise<TeeTime[]> {
+    return this.serialize(() => this.doSearchTeeTimes(courseIds, params))
+  }
+
+  private async doSearchTeeTimes(courseIds: string[], params: SearchParams): Promise<TeeTime[]> {
     if (!this.sessionReady) await this.initialize()
     const session = await this.getSession()
 
@@ -195,6 +214,13 @@ export class EzLinksAdapter {
     if ((response.status === 401 || response.status === 403) && !this.cookieOverride()) {
       console.log(`[EzLinks] Search got ${response.status}, re-logging in and retrying once...`)
       await this.login()
+      response = await doSearch()
+    }
+
+    for (let attempt = 0; attempt < MAX_429_RETRIES && response.status === 429; attempt++) {
+      const wait = RETRY_BASE_MS * Math.pow(2, attempt)
+      console.warn(`[EzLinks] 429 rate limited, backing off ${wait}ms (attempt ${attempt + 1}/${MAX_429_RETRIES})`)
+      await new Promise(r => setTimeout(r, wait))
       response = await doSearch()
     }
 

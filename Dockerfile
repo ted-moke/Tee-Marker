@@ -17,8 +17,11 @@ COPY backend/src ./src
 RUN npm ci && npm run build
 
 # Stage 3: Production image
-FROM node:20-alpine AS production
+FROM node:20-slim AS production
 WORKDIR /app
+
+# node-tls-client ships a glibc .so that needs libresolv
+RUN apt-get update && apt-get install -y --no-install-recommends libc6 ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # Copy compiled backend
 COPY --from=backend-builder /app/backend/dist ./backend/dist

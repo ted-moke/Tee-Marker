@@ -1,7 +1,15 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import type { SchedulerStatus, CheckRecord } from '@/components/dashboard/types'
 import RecentChecksList from '@/components/dashboard/RecentChecksList'
+
+interface EzLinksTestResult {
+  date: string
+  status: string
+  count?: number
+  error?: string
+  elapsed?: number
+}
 
 interface SchedulerCardProps {
   status?: SchedulerStatus
@@ -11,6 +19,9 @@ interface SchedulerCardProps {
   onRunWeatherOutlook: () => void
   runTestTeeTimesPending: boolean
   onRunTestTeeTimes: () => void
+  testEzLinksPending: boolean
+  onTestEzLinks: (dates: number) => void
+  ezLinksTestResults: EzLinksTestResult[] | null
   checksLast24h: number
   showRecentChecks: boolean
   onToggleRecentChecks: () => void
@@ -25,11 +36,17 @@ const SchedulerCard: React.FC<SchedulerCardProps> = ({
   onRunWeatherOutlook,
   runTestTeeTimesPending,
   onRunTestTeeTimes,
+  testEzLinksPending,
+  onTestEzLinks,
+  ezLinksTestResults,
   checksLast24h,
   showRecentChecks,
   onToggleRecentChecks,
   history,
-}) => (
+}) => {
+  const [ezLinksDateCount, setEzLinksDateCount] = useState(5)
+
+  return (
   <div className="card p-3 sm:p-4">
     <div className="flex items-center justify-between mb-2">
       <div className="flex items-center gap-2">
@@ -75,6 +92,46 @@ const SchedulerCard: React.FC<SchedulerCardProps> = ({
     </div>
 
     <div className="border-t border-gray-100 pt-2">
+      <div className="flex items-center gap-2 px-1.5 py-1.5">
+        <span className="text-sm text-gray-600">EzLinks test:</span>
+        <input
+          type="number"
+          min={1}
+          max={20}
+          value={ezLinksDateCount}
+          onChange={e => setEzLinksDateCount(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
+          className="w-14 text-sm border border-gray-300 rounded px-2 py-1"
+        />
+        <span className="text-xs text-gray-500">dates</span>
+        <button
+          onClick={() => onTestEzLinks(ezLinksDateCount)}
+          disabled={testEzLinksPending}
+          className="btn btn-secondary text-sm px-3 py-1"
+        >
+          {testEzLinksPending
+            ? <span className="inline-flex items-center"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Testing...</span>
+            : 'test'}
+        </button>
+      </div>
+
+      {ezLinksTestResults && (
+        <div className="px-1.5 pb-2 space-y-0.5">
+          {ezLinksTestResults.map(r => (
+            <div key={r.date} className="flex items-center gap-2 text-xs font-mono">
+              <span className={r.status === 'ok' ? 'text-green-600' : 'text-red-600'}>
+                {r.status === 'ok' ? '\u2713' : '\u2717'}
+              </span>
+              <span className="text-gray-700">{r.date}</span>
+              {r.status === 'ok' && <span className="text-gray-500">{r.count} times</span>}
+              {r.error && <span className="text-red-500">{r.error}</span>}
+              {r.elapsed != null && <span className="text-gray-400">{(r.elapsed / 1000).toFixed(1)}s</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+
+    <div className="border-t border-gray-100 pt-2">
       <button
         type="button"
         onClick={onToggleRecentChecks}
@@ -94,6 +151,7 @@ const SchedulerCard: React.FC<SchedulerCardProps> = ({
       )}
     </div>
   </div>
-)
+  )
+}
 
 export default SchedulerCard

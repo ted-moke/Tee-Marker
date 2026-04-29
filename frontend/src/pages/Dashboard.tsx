@@ -172,6 +172,24 @@ const Dashboard: React.FC = () => {
     onError: (err: Error) => toast.error(err.message),
   })
 
+  const [ezLinksTestResults, setEzLinksTestResults] = useState<Array<{ date: string; status: string; count?: number; error?: string; elapsed?: number }> | null>(null)
+
+  const testEzLinks = useMutation({
+    mutationFn: (dates: number) =>
+      api.post<{
+        success: boolean
+        data: { results: Array<{ date: string; status: string; count?: number; error?: string; elapsed?: number }> }
+      }>('/scheduler/test-ezlinks', { dates }),
+    onSuccess: (res) => {
+      setEzLinksTestResults(res.data.results)
+      const ok = res.data.results.filter(r => r.status === 'ok').length
+      const fail = res.data.results.filter(r => r.status === 'error').length
+      if (fail === 0) toast.success(`All ${ok} dates returned OK`)
+      else toast.error(`${fail}/${ok + fail} dates failed`)
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
   const status = statusRes?.data
   const history = historyRes?.data ?? []
   const checksLast24h = history.filter(record => {
@@ -189,6 +207,9 @@ const Dashboard: React.FC = () => {
         onRunWeatherOutlook={() => sendWeatherOutlook.mutate()}
         runTestTeeTimesPending={sendCurrentTeeTimesTest.isPending}
         onRunTestTeeTimes={() => sendCurrentTeeTimesTest.mutate()}
+        testEzLinksPending={testEzLinks.isPending}
+        onTestEzLinks={(dates: number) => testEzLinks.mutate(dates)}
+        ezLinksTestResults={ezLinksTestResults}
         checksLast24h={checksLast24h}
         showRecentChecks={showRecentChecks}
         onToggleRecentChecks={() => setShowRecentChecks(prev => !prev)}
