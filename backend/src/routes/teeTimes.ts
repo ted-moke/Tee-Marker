@@ -6,8 +6,28 @@ import { weatherService } from '../services/WeatherService'
 import { Preferences, TeeTime } from '../types'
 import { DEFAULT_PREFERENCES, SCHEDULE_SOURCE } from '../constants'
 import { resolveWeatherLocationFromTimes } from '../utils/weatherLocation'
+import { readActiveTeeTimes } from '../utils/teeTimeStore'
 
 const router = Router()
+
+router.get('/active', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const scheduleIdsRaw = req.query['scheduleIds']
+    const datesRaw = req.query['dates']
+    if (!scheduleIdsRaw || !datesRaw) {
+      res.status(400).json({ success: false, error: 'scheduleIds and dates are required' })
+      return
+    }
+
+    const scheduleIds = String(scheduleIdsRaw).split(',').filter(Boolean)
+    const dates = String(datesRaw).split(',').filter(Boolean)
+    const data = await readActiveTeeTimes(scheduleIds, dates)
+    res.json({ success: true, data })
+  } catch (err: any) {
+    console.error('Error reading active tee times:', err)
+    res.status(500).json({ success: false, error: 'Failed to read active tee times' })
+  }
+})
 
 router.get('/search', async (req: Request, res: Response): Promise<void> => {
   try {

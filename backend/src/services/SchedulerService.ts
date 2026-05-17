@@ -1,11 +1,12 @@
 import * as cron from 'node-cron'
+import { FieldPath } from 'firebase-admin/firestore'
 import { db } from '../index'
 import { francisByrneAdapter } from '../adapters/FrancisByrneAdapter'
 import { ezLinksAdapter } from '../adapters/EzLinksAdapter'
 import { notificationService } from './NotificationService'
 import { weatherService } from './WeatherService'
 import { COURSE_LOCATION_BY_SCHEDULE, DEFAULT_PREFERENCES, SCHEDULE_SOURCE } from '../constants'
-import { Preferences, CheckRecord, SchedulerStatus, TeeTime, Reservation, TeeTimeSource } from '../types'
+import { Preferences, CheckRecord, SchedulerStatus, TeeTime, Reservation, TeeTimeSource, StoredTeeTime, TeeTimeActiveIndex, TeeTimeWeather } from '../types'
 
 function sourceFor(scheduleId: string): TeeTimeSource {
   return SCHEDULE_SOURCE[scheduleId] ?? 'foreup'
@@ -191,6 +192,109 @@ export class SchedulerService {
         }
       })
     )
+  }
+
+  /**
+   * Persists the lifecycle snapshot for a (source, scheduleId, date) and returns
+   * a map of doc IDs to the StoredTeeTime that reflects post-upsert state. Caller
+   * uses this for notification decisions (checking notifiedAt).
+   *
+   * - Upserts each observed time as status='active', preserving firstSeenAt and notifiedAt.
+   * - Marks previously-active times that disappeared as status='inactive'.
+   * - Updates the teeTimeActive index doc.
+   */
+  private async persistLifecycleSnapshot(
+    source: TeeTimeSource,
+    scheduleId: string,
+    date: string,
+    observed: TeeTime[],
+    inWindowWithWeather: TeeTime[]
+  ): Promise<Map<string, StoredTeeTime>> {
+    const now = new Date()
+    const indexRef = db.collection('teeTimeActive').doc(`${source}_${scheduleId}_${date}`)
+
+    const weatherByTime = new Map<string, TeeTimeWeather>()
+    for (const t of inWindowWithWeather) {
+      if (t.weather) weatherByTime.set(t.time, t.weather)
+    }
+
+    const indexSnap = await indexRef.get()
+    const previouslyActive: string[] = indexSnap.exists
+      ? ((indexSnap.data() as TeeTimeActiveIndex | undefined)?.activeTimes ?? [])
+      : []
+
+    const currentActive = observed.map(t => t.time)
+    const currentActiveSet = new Set(currentActive)
+
+    const observedDocIds = observed.map(t => dedupKey(t))
+    const existingByDocId = new Map<string, StoredTeeTime | null>()
+    if (observedDocIds.length > 0) {
+      const refs = observedDocIds.map(id => db.collection('teeTimes').doc(id))
+      const snaps = await db.getAll(...refs)
+      snaps.forEach((snap, i) => {
+        const id = observedDocIds[i]!
+        existingByDocId.set(id, snap.exists ? (snap.data() as StoredTeeTime) : null)
+      })
+    }
+
+    const resultMap = new Map<string, StoredTeeTime>()
+
+    let upsertBatch = db.batch()
+    let upsertOps = 0
+    for (const t of observed) {
+      const docId = dedupKey(t)
+      const existing = existingByDocId.get(docId) ?? null
+      const weather = weatherByTime.get(t.time) ?? t.weather
+      const doc: StoredTeeTime = {
+        source: t.source,
+        scheduleId: t.scheduleId,
+        ...(t.scheduleName !== undefined && { scheduleName: t.scheduleName }),
+        date: t.date,
+        time: t.time,
+        availableSpots: t.availableSpots,
+        ...(t.price !== undefined && { price: t.price }),
+        ...(weather && { weather }),
+        status: 'active',
+        firstSeenAt: existing?.firstSeenAt ?? now,
+        lastSeenAt: now,
+        disappearedAt: null,
+        notifiedAt: existing?.notifiedAt ?? null,
+      }
+      upsertBatch.set(db.collection('teeTimes').doc(docId), doc)
+      upsertOps++
+      resultMap.set(docId, doc)
+      if (upsertOps >= 450) {
+        await upsertBatch.commit()
+        upsertBatch = db.batch()
+        upsertOps = 0
+      }
+    }
+    if (upsertOps > 0) await upsertBatch.commit()
+
+    const disappeared = previouslyActive.filter(time => !currentActiveSet.has(time))
+    if (disappeared.length > 0) {
+      let batch = db.batch()
+      let ops = 0
+      for (const time of disappeared) {
+        const docId = `${source}_${scheduleId}_${date}_${time}`
+        batch.update(db.collection('teeTimes').doc(docId), {
+          status: 'inactive',
+          disappearedAt: now,
+          lastSeenAt: now,
+        })
+        ops++
+        if (ops >= 450) {
+          await batch.commit()
+          batch = db.batch()
+          ops = 0
+        }
+      }
+      if (ops > 0) await batch.commit()
+    }
+
+    await indexRef.set({ activeTimes: currentActive, updatedAt: now })
+
+    return resultMap
   }
 
   private async sendDailyWeatherSummaryIfNeeded(
@@ -403,6 +507,7 @@ export class SchedulerService {
       const dates = (prefs.specificDates || []).filter(d => d >= today)
 
       const newMatches: TeeTime[] = []
+      const newMatchDocIds: string[] = []
       const searchedTimes: TeeTime[] = []
       console.log(
         `[Scheduler] Starting check for schedules=${prefs.scheduleIds.join(',')} dates=${dates.join(',')} window=${prefs.timeRange.start}-${prefs.timeRange.end} players>=${prefs.players}`
@@ -410,6 +515,7 @@ export class SchedulerService {
 
       record.schedulesChecked.push(...prefs.scheduleIds)
       for (const scheduleId of prefs.scheduleIds) {
+        const source = sourceFor(scheduleId)
         for (const date of dates) {
           try {
             // Query one schedule at a time so each provider uses the right primary context.
@@ -428,6 +534,15 @@ export class SchedulerService {
               inWindow,
               prefs.forecastOffsetHours
             )
+
+            const persisted = await this.persistLifecycleSnapshot(
+              source,
+              scheduleId,
+              date,
+              times,
+              inWindowWithWeather
+            )
+
             console.log(
               `[Scheduler] schedule=${scheduleId} date=${date} returned=${times.length} inWindow=${inWindowWithWeather.length} sampleTimes=${times.slice(0, 5).map(t => t.time).join(',') || 'none'}`
             )
@@ -435,11 +550,22 @@ export class SchedulerService {
             record.timesFound += inWindowWithWeather.length
 
             for (const t of inWindowWithWeather) {
-              const dedupId = dedupKey(t)
-              const existing = await db.collection('notifiedTimes').doc(dedupId).get()
-              if (!existing.exists) {
-                newMatches.push(t)
+              const docId = dedupKey(t)
+              const stored = persisted.get(docId)
+              if (stored?.notifiedAt) continue
+
+              // Cutover: respect legacy notifiedTimes ledger to avoid a re-notification storm.
+              // When we find a legacy hit, backfill notifiedAt on the new doc so behavior
+              // survives eventual deletion of the legacy collection.
+              const legacy = await db.collection('notifiedTimes').doc(docId).get()
+              if (legacy.exists) {
+                const legacyNotifiedAt = (legacy.data() as { notifiedAt?: Date } | undefined)?.notifiedAt ?? new Date()
+                await db.collection('teeTimes').doc(docId).update({ notifiedAt: legacyNotifiedAt })
+                continue
               }
+
+              newMatches.push(t)
+              newMatchDocIds.push(docId)
             }
           } catch (err: any) {
             const msg = `Error checking schedule ${scheduleId} for ${date}: ${err?.message}`
@@ -460,19 +586,19 @@ export class SchedulerService {
           await notificationService.sendTeeTimeAlert(prefs.discordWebhookUrl, newMatches, prefs.weatherThresholds)
           record.notified = newMatches.length
 
-          // Write dedup records
-          const batch = db.batch()
-          for (const t of newMatches) {
-            const dedupId = dedupKey(t)
-            batch.set(db.collection('notifiedTimes').doc(dedupId), {
-              source: t.source,
-              scheduleId: t.scheduleId,
-              date: t.date,
-              time: t.time,
-              notifiedAt: new Date(),
-            })
+          const now = new Date()
+          let batch = db.batch()
+          let ops = 0
+          for (const docId of newMatchDocIds) {
+            batch.update(db.collection('teeTimes').doc(docId), { notifiedAt: now })
+            ops++
+            if (ops >= 450) {
+              await batch.commit()
+              batch = db.batch()
+              ops = 0
+            }
           }
-          await batch.commit()
+          if (ops > 0) await batch.commit()
         } catch (err: any) {
           record.errors.push(`Notification failed: ${err?.message}`)
         }
@@ -605,7 +731,14 @@ export class ReservationSchedulerService {
       })
     )
 
-    console.log('[ReservationScheduler] Started (day-of @6am, digest @8am Mon/Thu/Sun)')
+    // 3am daily: prune teeTimes/teeTimeActive docs older than 7 days
+    this.jobs.push(
+      cron.schedule('0 3 * * *', () => {
+        this.runTeeTimeCleanup().catch(err => console.error('[ReservationScheduler] teeTimes cleanup failed:', err))
+      })
+    )
+
+    console.log('[ReservationScheduler] Started (day-of @6am, digest @8am Mon/Thu/Sun, teeTimes cleanup @3am)')
   }
 
   stop(): void {
@@ -625,6 +758,48 @@ export class ReservationSchedulerService {
       await notificationService.sendDayOfReminder(prefs.discordWebhookUrl, r)
       console.log(`[ReservationScheduler] Sent day-of reminder for ${r.date} ${r.time} ${r.scheduleName}`)
     }
+  }
+
+  async runTeeTimeCleanup(): Promise<void> {
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - 7)
+    const cutoffStr = toDateString(cutoff)
+
+    const indexRefs = await db.collection('teeTimeActive').listDocuments()
+    let prunedIndexes = 0
+    let prunedTimes = 0
+
+    for (const indexRef of indexRefs) {
+      const parts = indexRef.id.split('_')
+      if (parts.length < 3) continue
+      const date = parts[parts.length - 1]
+      if (!date || date >= cutoffStr) continue
+
+      const prefix = `${indexRef.id}_`
+      const childSnap = await db.collection('teeTimes')
+        .where(FieldPath.documentId(), '>=', prefix)
+        .where(FieldPath.documentId(), '<', `${prefix}~`)
+        .get()
+
+      let batch = db.batch()
+      let ops = 0
+      for (const doc of childSnap.docs) {
+        batch.delete(doc.ref)
+        ops++
+        prunedTimes++
+        if (ops >= 450) {
+          await batch.commit()
+          batch = db.batch()
+          ops = 0
+        }
+      }
+      batch.delete(indexRef)
+      ops++
+      prunedIndexes++
+      await batch.commit()
+    }
+
+    console.log(`[ReservationScheduler] teeTimes cleanup: pruned ${prunedIndexes} index docs and ${prunedTimes} time docs older than ${cutoffStr}`)
   }
 
   async runWeeklyDigest(): Promise<void> {

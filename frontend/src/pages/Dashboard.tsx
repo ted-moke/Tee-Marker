@@ -33,22 +33,14 @@ const Dashboard: React.FC = () => {
   const preferences = prefsRes?.data
 
   const { data: calendarData, isLoading: calendarLoading } = useQuery({
-    queryKey: ['dashboard-calendar', preferences?.scheduleIds ?? [], preferences?.players ?? 1, dateRange],
+    queryKey: ['dashboard-calendar', preferences?.scheduleIds ?? [], dateRange],
     enabled: Boolean(preferences?.scheduleIds?.length),
     refetchInterval: 120_000,
     queryFn: async () => {
       const scheduleIds = preferences?.scheduleIds ?? []
-      const players = preferences?.players ?? 1
-      const requests = dateRange.flatMap(date =>
-        scheduleIds.map(scheduleId => ({ date, scheduleId }))
-      )
 
-      const responses = await Promise.allSettled(
-        requests.map(r =>
-          api.get<{ success: boolean; data: TeeTime[] }>(
-            `/tee-times/search?scheduleId=${r.scheduleId}&date=${r.date}&players=${players}`
-          )
-        )
+      const res = await api.get<{ success: boolean; data: TeeTime[] }>(
+        `/tee-times/active?scheduleIds=${scheduleIds.join(',')}&dates=${dateRange.join(',')}`
       )
 
       const byDate: CalendarData = {}
@@ -59,22 +51,20 @@ const Dashboard: React.FC = () => {
         }
       }
 
-      responses.forEach((result, idx) => {
-        if (result.status !== 'fulfilled') return
-        const request = requests[idx]
-        if (!request) return
+      for (const t of res.data) {
+        const bucket = byDate[t.date]?.[t.scheduleId]
+        if (!bucket) continue
+        bucket.allTimes.push(t)
+      }
 
-        const sortedTimes = [...result.value.data].sort(
-          (a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time)
-        )
-        const earliest = sortedTimes[0] ?? null
-
-        byDate[request.date]![request.scheduleId] = {
-          earliest,
-          additionalCount: Math.max(0, sortedTimes.length - 1),
-          allTimes: sortedTimes,
+      for (const date of dateRange) {
+        for (const scheduleId of scheduleIds) {
+          const bucket = byDate[date]![scheduleId]!
+          bucket.allTimes.sort((a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time))
+          bucket.earliest = bucket.allTimes[0] ?? null
+          bucket.additionalCount = Math.max(0, bucket.allTimes.length - 1)
         }
-      })
+      }
 
       return byDate
     },
@@ -232,6 +222,7 @@ const Dashboard: React.FC = () => {
         preferences={preferences}
         dateRange={dateRange}
         calendarData={calendarData}
+        lastCheck={status?.lastCheck}
       />
     </div>
   )

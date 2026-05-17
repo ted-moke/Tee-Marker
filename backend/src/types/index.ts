@@ -86,6 +86,29 @@ export interface TeeTime {
   weather?: TeeTimeWeather
 }
 
+export type TeeTimeStatus = 'active' | 'inactive'
+
+export interface StoredTeeTime {
+  source: TeeTimeSource
+  scheduleId: string
+  scheduleName?: string
+  date: string
+  time: string
+  availableSpots: number
+  price?: number
+  weather?: TeeTimeWeather
+  status: TeeTimeStatus
+  firstSeenAt: Date
+  lastSeenAt: Date
+  disappearedAt: Date | null
+  notifiedAt: Date | null
+}
+
+export interface TeeTimeActiveIndex {
+  activeTimes: string[]
+  updatedAt: Date
+}
+
 export interface SchedulerStatus {
   isRunning: boolean
   lastCheck: Date | null

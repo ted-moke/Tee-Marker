@@ -109,6 +109,13 @@ app.listen(PORT, async () => {
     console.log(`Scheduler started (every ${interval} min)`)
     reservationSchedulerService.start()
     console.log('Reservation scheduler started')
+
+    if (process.env['DISCORD_BOT_TOKEN']) {
+      const { discordBotService } = await import('./discord/DiscordBotService')
+      await discordBotService.start()
+    } else {
+      console.log('DISCORD_BOT_TOKEN not set, skipping Discord bot')
+    }
   } catch (err: any) {
     console.error('Failed to start scheduler:', JSON.stringify(err, Object.getOwnPropertyNames(err)))
   }
