@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { DailyWeatherSummaryDay, Reservation, TeeTime, WeatherThresholds } from '../types'
-import { FRANCIS_BYRNE_SCHEDULES } from '../constants'
+import { ALL_SCHEDULE_NAMES } from '../constants'
 
 const DISCORD_DESCRIPTION_LIMIT = 4000
 
@@ -11,7 +11,7 @@ export class NotificationService {
 
     const grouped = new Map<string, { course: string; date: string; dateLabel: string; times: TeeTime[] }>()
     for (const t of times) {
-      const course = FRANCIS_BYRNE_SCHEDULES[t.scheduleId] || t.scheduleId
+      const course = t.scheduleName || ALL_SCHEDULE_NAMES[t.scheduleId] || t.scheduleId
       const dateLabel = this.formatRelativeDayLabel(t.date)
       const key = `${t.date}|||${course}`
       if (!grouped.has(key)) grouped.set(key, { course, date: t.date, dateLabel, times: [] })
@@ -97,7 +97,7 @@ export class NotificationService {
   private buildTeeTimeAlertTitle(times: TeeTime[]): string {
     if (times.length === 1) {
       const time = times[0]!
-      const course = FRANCIS_BYRNE_SCHEDULES[time.scheduleId] || time.scheduleId
+      const course = time.scheduleName || ALL_SCHEDULE_NAMES[time.scheduleId] || time.scheduleId
       const dateLabel = this.formatRelativeDayLabel(time.date)
       const timeLabel = this.formatTime(time.time)
       return `${dateLabel} ${timeLabel} ${course} Tee Time`
@@ -108,8 +108,11 @@ export class NotificationService {
 
   private formatTime(value: string): string {
     const trimmed = value.trim()
-    const timePart = trimmed.split(/[ T]/).pop()?.trim() || trimmed
-    return timePart
+    const ampm = trimmed.match(/(\d{1,2}:\d{2}\s*(?:AM|PM))\s*$/i)
+    if (ampm) return ampm[1]!.replace(/\s+/g, ' ')
+    const m24 = trimmed.match(/(?:^|[ T])(\d{1,2}:\d{2})(?::\d{2})?\s*$/)
+    if (m24) return m24[1]!
+    return trimmed
   }
 
   private formatDailyWeatherLine(day: DailyWeatherSummaryDay, thresholds: WeatherThresholds | undefined, labelWidth: number): string {

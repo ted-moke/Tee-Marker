@@ -80,16 +80,12 @@ function getDailyWeatherSlot(date: Date, timeZone: string): '06' | '15' | null {
 
 function parseTimeToMinutes(value: string): number | null {
   const trimmed = value.trim()
-  const v = trimmed.split(/[ T]/).pop()?.trim() || trimmed
-  const m12 = v.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+
+  const m12 = trimmed.match(/(\d{1,2}):(\d{2})\s*(AM|PM)\s*$/i)
   if (m12) {
-    const rawHourStr = m12[1]
-    const minuteStr = m12[2]
-    const suffixRaw = m12[3]
-    if (!rawHourStr || !minuteStr || !suffixRaw) return null
-    const rawHour = parseInt(rawHourStr, 10)
-    const minute = parseInt(minuteStr, 10)
-    const suffix = suffixRaw.toUpperCase()
+    const rawHour = parseInt(m12[1]!, 10)
+    const minute = parseInt(m12[2]!, 10)
+    const suffix = m12[3]!.toUpperCase()
     if (Number.isNaN(rawHour) || Number.isNaN(minute) || minute < 0 || minute > 59 || rawHour < 1 || rawHour > 12) {
       return null
     }
@@ -97,13 +93,10 @@ function parseTimeToMinutes(value: string): number | null {
     return hour24 * 60 + minute
   }
 
-  const m24 = v.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/)
+  const m24 = trimmed.match(/(?:^|[ T])(\d{1,2}):(\d{2})(?::\d{2})?\s*$/)
   if (m24) {
-    const hourStr = m24[1]
-    const minuteStr = m24[2]
-    if (!hourStr || !minuteStr) return null
-    const hour = parseInt(hourStr, 10)
-    const minute = parseInt(minuteStr, 10)
+    const hour = parseInt(m24[1]!, 10)
+    const minute = parseInt(m24[2]!, 10)
     if (Number.isNaN(hour) || Number.isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
       return null
     }
@@ -732,13 +725,15 @@ export class ReservationSchedulerService {
     )
 
     // 3am daily: prune teeTimes/teeTimeActive docs older than 7 days
+    // and drop past entries from preferences.specificDates
     this.jobs.push(
       cron.schedule('0 3 * * *', () => {
         this.runTeeTimeCleanup().catch(err => console.error('[ReservationScheduler] teeTimes cleanup failed:', err))
+        this.prunePastSpecificDates().catch(err => console.error('[ReservationScheduler] specificDates prune failed:', err))
       })
     )
 
-    console.log('[ReservationScheduler] Started (day-of @6am, digest @8am Mon/Thu/Sun, teeTimes cleanup @3am)')
+    console.log('[ReservationScheduler] Started (day-of @6am, digest @8am Mon/Thu/Sun, teeTimes + specificDates cleanup @3am)')
   }
 
   stop(): void {
@@ -800,6 +795,20 @@ export class ReservationSchedulerService {
     }
 
     console.log(`[ReservationScheduler] teeTimes cleanup: pruned ${prunedIndexes} index docs and ${prunedTimes} time docs older than ${cutoffStr}`)
+  }
+
+  async prunePastSpecificDates(): Promise<void> {
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    const prefsRef = db.collection('preferences').doc('user')
+    const snap = await prefsRef.get()
+    if (!snap.exists) return
+    const data = snap.data() as Partial<Preferences>
+    const current = data.specificDates ?? []
+    const kept = current.filter(d => d >= todayStr)
+    if (kept.length === current.length) return
+    await prefsRef.update({ specificDates: kept })
+    const removed = current.length - kept.length
+    console.log(`[ReservationScheduler] pruned ${removed} past specificDates (cutoff ${todayStr})`)
   }
 
   async runWeeklyDigest(): Promise<void> {

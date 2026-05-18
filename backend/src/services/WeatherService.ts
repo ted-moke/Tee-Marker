@@ -55,9 +55,8 @@ function sleep(ms: number): Promise<void> {
 
 function parseTimeToMinutes(value: string): number | null {
   const trimmed = value.trim()
-  const normalized = trimmed.split(/[ T]/).pop()?.trim() ?? trimmed
-  const m12 = normalized.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
 
+  const m12 = trimmed.match(/(\d{1,2}):(\d{2})\s*(AM|PM)\s*$/i)
   if (m12) {
     const rawHour = Number.parseInt(m12[1] ?? '', 10)
     const minute = Number.parseInt(m12[2] ?? '', 10)
@@ -76,7 +75,7 @@ function parseTimeToMinutes(value: string): number | null {
     return hour24 * 60 + minute
   }
 
-  const m24 = normalized.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/)
+  const m24 = trimmed.match(/(?:^|[ T])(\d{1,2}):(\d{2})(?::\d{2})?\s*$/)
   if (m24) {
     const hour = Number.parseInt(m24[1] ?? '', 10)
     const minute = Number.parseInt(m24[2] ?? '', 10)

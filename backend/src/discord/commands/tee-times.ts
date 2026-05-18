@@ -2,17 +2,37 @@ import { SlashCommandBuilder, ChatInputCommandInteraction, AutocompleteInteracti
 import { db } from '../../index'
 import { weatherService } from '../../services/WeatherService'
 import { schedulerService } from '../../services/SchedulerService'
-import { DEFAULT_PREFERENCES, ALL_SCHEDULE_NAMES } from '../../constants'
+import { DEFAULT_PREFERENCES, ALL_SCHEDULE_NAMES, SCHEDULE_SHORT_NAMES } from '../../constants'
 import { resolveWeatherLocationFromTimes } from '../../utils/weatherLocation'
 import { readActiveTeeTimes } from '../../utils/teeTimeStore'
 import type { Preferences, TeeTime } from '../../types'
+
+function formatTimeOfDay(value: string): string {
+  const trimmed = value.trim()
+  const m12 = trimmed.match(/(\d{1,2}):(\d{2})\s*(AM|PM)\s*$/i)
+  let hour: number
+  let minute: number
+  if (m12) {
+    const raw = parseInt(m12[1]!, 10)
+    minute = parseInt(m12[2]!, 10)
+    hour = (raw % 12) + (m12[3]!.toUpperCase() === 'PM' ? 12 : 0)
+  } else {
+    const m24 = trimmed.match(/(?:^|[ T])(\d{1,2}):(\d{2})(?::\d{2})?\s*$/)
+    if (!m24) return value
+    hour = parseInt(m24[1]!, 10)
+    minute = parseInt(m24[2]!, 10)
+  }
+  const ampm = hour >= 12 ? 'PM' : 'AM'
+  const h12 = hour % 12 === 0 ? 12 : hour % 12
+  return `${String(h12).padStart(2, ' ')}:${String(minute).padStart(2, '0')} ${ampm}`
+}
 
 export const data = new SlashCommandBuilder()
   .setName('tee-times')
   .setDescription('Show available tee times (cached)')
   .addStringOption(option =>
     option.setName('date')
-      .setDescription('Date to search (YYYY-MM-DD, defaults to today)')
+      .setDescription('Date to search (YYYY-MM-DD); omit for window summary across all monitored dates')
       .setRequired(false))
   .addStringOption(option =>
     option.setName('course')
@@ -49,9 +69,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   }
 
   const dateArg = interaction.options.getString('date')
-  const searchDate = dateArg ?? new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(searchDate)) {
+  if (dateArg && !/^\d{4}-\d{2}-\d{2}$/.test(dateArg)) {
     await interaction.editReply('Invalid date format. Use YYYY-MM-DD.')
     return
   }
@@ -70,6 +88,20 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     }
   }
 
+  if (dateArg) {
+    await replyWithDayDetail(interaction, prefs, scheduleIds, dateArg, refresh)
+  } else {
+    await replyWithWindowSummary(interaction, prefs, scheduleIds)
+  }
+}
+
+async function replyWithDayDetail(
+  interaction: ChatInputCommandInteraction,
+  prefs: Preferences,
+  scheduleIds: string[],
+  searchDate: string,
+  refresh: boolean,
+): Promise<void> {
   const allTimes = await readActiveTeeTimes(scheduleIds, [searchDate])
 
   const d = new Date(searchDate + 'T12:00:00')
@@ -116,20 +148,40 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   const sections: string[] = []
   for (const [course, times] of byCourse) {
-    const lines = times.map(t => {
-      let line = `${t.time} — ${t.availableSpots} spot${t.availableSpots !== 1 ? 's' : ''}`
-      if (t.price != null) line += ` — $${t.price}`
-      if (t.weather) {
-        const w = t.weather
-        const temp = w.temperatureF != null ? `${Math.round(w.temperatureF)}°F` : ''
-        const rain = w.precipitationProbabilityPct != null ? `${w.precipitationProbabilityPct}% rain` : ''
-        const wind = w.windSpeedMph != null ? `${Math.round(w.windSpeedMph)} mph` : ''
-        const parts = [temp, rain, wind].filter(Boolean).join(', ')
-        if (parts) line += ` (${parts})`
-      }
-      return line
+    const sorted = [...times].sort((a, b) => a.time.localeCompare(b.time))
+    const rows = sorted.map(t => {
+      const time = formatTimeOfDay(t.time)
+      const spots = `${t.availableSpots}p`
+      const price = t.price != null ? `$${Math.round(t.price)}` : ''
+      const w = t.weather
+      const temp = w?.temperatureF != null ? `${Math.round(w.temperatureF)}°F` : ''
+      const rain = w?.precipitationProbabilityPct != null ? `${w.precipitationProbabilityPct}%r` : ''
+      const wind = w?.windSpeedMph != null ? `${Math.round(w.windSpeedMph)}mph` : ''
+      return { time, spots, price, temp, rain, wind }
     })
-    sections.push(`**${course}**\n${lines.join('\n')}`)
+    const widths = {
+      time: Math.max(...rows.map(r => r.time.length)),
+      spots: Math.max(...rows.map(r => r.spots.length)),
+      price: Math.max(...rows.map(r => r.price.length)),
+      temp: Math.max(...rows.map(r => r.temp.length)),
+      rain: Math.max(...rows.map(r => r.rain.length)),
+      wind: Math.max(...rows.map(r => r.wind.length)),
+    }
+    const lines = rows.map(r => {
+      const cols = [
+        r.time.padStart(widths.time),
+        r.spots.padStart(widths.spots),
+        r.price.padStart(widths.price),
+        r.temp.padStart(widths.temp),
+        r.rain.padStart(widths.rain),
+        r.wind.padStart(widths.wind),
+      ].filter((_, i) => {
+        const widthVals = [widths.time, widths.spots, widths.price, widths.temp, widths.rain, widths.wind]
+        return widthVals[i]! > 0
+      })
+      return cols.join('  ')
+    })
+    sections.push(`**${course}**\n\`\`\`\n${lines.join('\n')}\n\`\`\``)
   }
 
   const description = sections.join('\n\n')
@@ -137,6 +189,66 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   const embed = new EmbedBuilder()
     .setTitle(`Tee Times — ${dateLabel}`)
     .setDescription(description.slice(0, 4000))
+    .setColor(0x22c55e)
+    .setTimestamp()
+
+  await interaction.editReply({ content: '', embeds: [embed] })
+}
+
+async function replyWithWindowSummary(
+  interaction: ChatInputCommandInteraction,
+  prefs: Preferences,
+  scheduleIds: string[],
+): Promise<void> {
+  const dates = [...prefs.specificDates].sort()
+  if (dates.length === 0) {
+    await interaction.editReply('No dates configured in preferences. Use `/tee-times date:YYYY-MM-DD` or add monitored dates in Preferences.')
+    return
+  }
+
+  const allTimes = await readActiveTeeTimes(scheduleIds, dates)
+
+  const earliestByDateSchedule = new Map<string, Map<string, string>>()
+  for (const t of allTimes) {
+    let courseMap = earliestByDateSchedule.get(t.date)
+    if (!courseMap) {
+      courseMap = new Map()
+      earliestByDateSchedule.set(t.date, courseMap)
+    }
+    const existing = courseMap.get(t.scheduleId)
+    if (!existing || t.time < existing) {
+      courseMap.set(t.scheduleId, t.time)
+    }
+  }
+
+  const dateLabels = new Map<string, string>(
+    dates.map(date => {
+      const d = new Date(date + 'T12:00:00')
+      return [date, d.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', timeZone: 'America/New_York' })]
+    })
+  )
+  const dateLabelWidth = Math.max(...[...dateLabels.values()].map(l => l.length))
+  const shortNames = new Map<string, string>(
+    scheduleIds.map(id => [id, SCHEDULE_SHORT_NAMES[id] ?? ALL_SCHEDULE_NAMES[id] ?? id])
+  )
+  const shortNameWidth = Math.max(...[...shortNames.values()].map(n => n.length))
+  const TIME_PLACEHOLDER = '   —    '
+
+  const lines = dates.map(date => {
+    const dateLabel = dateLabels.get(date)!.padEnd(dateLabelWidth)
+    const courseMap = earliestByDateSchedule.get(date)
+    const cols = scheduleIds.map(id => {
+      const short = shortNames.get(id)!.padEnd(shortNameWidth)
+      const earliest = courseMap?.get(id)
+      const timeStr = earliest ? formatTimeOfDay(earliest) : TIME_PLACEHOLDER
+      return `${short} ${timeStr}`
+    })
+    return `${dateLabel}  ${cols.join('  ')}`
+  })
+
+  const embed = new EmbedBuilder()
+    .setTitle('Tee Times — Window Summary')
+    .setDescription('```\n' + lines.join('\n').slice(0, 3900) + '\n```')
     .setColor(0x22c55e)
     .setTimestamp()
 

@@ -29,6 +29,15 @@ export const ALL_SCHEDULE_NAMES: Record<string, string> = {
   ...EZLINKS_COURSES,
 }
 
+export const SCHEDULE_SHORT_NAMES: Record<string, string> = {
+  '11078': 'Fran',
+  '11077': 'Weeq',
+  '11075': 'Hend',
+  '4549': 'Gall',
+  '4551': 'GHLC',
+  '4545': 'Ash',
+}
+
 export interface CourseLocation {
   latitude: number
   longitude: number
