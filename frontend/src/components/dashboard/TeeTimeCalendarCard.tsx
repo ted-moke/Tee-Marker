@@ -124,6 +124,7 @@ const TeeTimeCalendarCard: React.FC<TeeTimeCalendarCardProps> = ({
                     perCourse={perCourse}
                     isMonitored={isMonitored}
                     isToday={isToday}
+                    timeRange={preferences.timeRange}
                     reservation={reservation}
                     selectedScheduleId={selectedScheduleId}
                     onChipClick={(scheduleId) =>

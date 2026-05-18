@@ -56,7 +56,7 @@ export const COURSE_LOCATION_BY_SCHEDULE: Record<string, CourseLocation> = {
 }
 
 export const OPEN_METEO_BASE_URL = 'https://api.open-meteo.com/v1/forecast'
-export const WEATHER_CACHE_TTL_MS = 60 * 60 * 1000
+export const WEATHER_CACHE_TTL_MS = 3 * 60 * 60 * 1000
 export const WEATHER_FORECAST_HOURLY_VARS = [
   'temperature_2m',
   'precipitation_probability',

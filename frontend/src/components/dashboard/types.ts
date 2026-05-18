@@ -21,6 +21,7 @@ export interface CheckRecord {
 export interface Preferences {
   scheduleIds: string[]
   specificDates: string[]
+  timeRange: { start: string; end: string }
   players: number
   forecastOffsetHours: number
   weatherThresholds: WeatherThresholds

@@ -7,6 +7,7 @@ interface CourseChipProps {
   scheduleId: string
   summary: CourseDaySummary
   isSelected: boolean
+  hasTimeInWindow: boolean
   onClick: () => void
 }
 
@@ -14,6 +15,7 @@ const CourseChip: React.FC<CourseChipProps> = ({
   scheduleId,
   summary,
   isSelected,
+  hasTimeInWindow,
   onClick,
 }) => {
   const earliest = summary.earliest
@@ -23,12 +25,13 @@ const CourseChip: React.FC<CourseChipProps> = ({
   const shortName = getCourseShortName(scheduleId)
   const time = formatTime12hShort(earliest.time)
   const extra = summary.additionalCount > 0 ? ` +${summary.additionalCount}` : ''
+  const chipClasses = hasTimeInWindow ? color.chip : color.chipMuted
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`${color.chip} ${isSelected ? 'ring-2 ring-offset-1 ring-gray-700' : ''} block w-full rounded-sm border px-1.5 py-0.5 text-[10px] sm:text-xs font-medium leading-tight text-left truncate transition-colors`}
+      className={`${chipClasses} ${isSelected ? 'ring-2 ring-offset-1 ring-gray-700' : ''} block w-full rounded-sm border px-1.5 py-0.5 text-[10px] sm:text-xs font-medium leading-tight text-left truncate transition-colors`}
     >
       <span className="font-semibold">{shortName}</span>{' '}
       <span className="tabular-nums">{time}</span>

@@ -59,6 +59,15 @@ export function formatTime12h(rawTime: string): string {
   return `${h12}:${String(mins).padStart(2, '0')} ${meridiem}`
 }
 
+export function isTimeInRange(time: string, start: string, end: string): boolean {
+  const t = parseTimeToMinutes(time)
+  const s = parseTimeToMinutes(start)
+  const e = parseTimeToMinutes(end)
+  if (!Number.isFinite(t) || !Number.isFinite(s) || !Number.isFinite(e)) return false
+  if (t === Number.MAX_SAFE_INTEGER || s === Number.MAX_SAFE_INTEGER || e === Number.MAX_SAFE_INTEGER) return false
+  return t >= s && t <= e
+}
+
 export function formatTime12hShort(rawTime: string): string {
   const clean = rawTime.trim()
   const minutes = parseTimeToMinutes(clean)

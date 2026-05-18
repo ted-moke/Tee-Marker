@@ -165,25 +165,39 @@ export class SchedulerService {
       return times
     }
 
-    const weatherByTime = new Map<string, TeeTime['weather'] | null>()
     return Promise.all(
       times.map(async (teeTime): Promise<TeeTime> => {
-        if (weatherByTime.has(teeTime.time)) {
-          const cached = weatherByTime.get(teeTime.time)
-          return cached ? { ...teeTime, weather: cached } : teeTime
-        }
-
         try {
           const weather = await weatherService.getWeatherForTeeTime(location, date, teeTime.time, forecastOffsetHours)
-          weatherByTime.set(teeTime.time, weather)
           return weather ? { ...teeTime, weather } : teeTime
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err)
           console.warn(`[Scheduler] Weather enrichment failed schedule=${scheduleId} date=${date}: ${message}`)
-          weatherByTime.set(teeTime.time, null)
           return teeTime
         }
       })
+    )
+  }
+
+  private async prefetchWeatherForCheck(scheduleIds: string[], dates: string[]): Promise<void> {
+    if (scheduleIds.length === 0 || dates.length === 0) return
+    const locationsByKey = new Map<string, { latitude: number; longitude: number; timezone: string }>()
+    const snap = (v: number) => (Math.round(v / 0.1) * 0.1).toFixed(2)
+    for (const scheduleId of scheduleIds) {
+      const location = COURSE_LOCATION_BY_SCHEDULE[scheduleId]
+      if (!location) continue
+      const key = `${snap(location.latitude)},${snap(location.longitude)},${location.timezone}`
+      if (!locationsByKey.has(key)) {
+        locationsByKey.set(key, location)
+      }
+    }
+    await Promise.all(
+      [...locationsByKey.values()].map(location =>
+        weatherService.prefetchHourlyForDates(location, dates).catch(err => {
+          const message = err instanceof Error ? err.message : String(err)
+          console.warn(`[Scheduler] Weather prefetch failed: ${message}`)
+        })
+      )
     )
   }
 
@@ -404,6 +418,8 @@ export class SchedulerService {
     const todayStr = toDateString(new Date())
     const dates = (prefs.specificDates || []).filter(d => d >= todayStr)
 
+    await this.prefetchWeatherForCheck(prefs.scheduleIds, dates)
+
     const matchingTimes: TeeTime[] = []
     for (const scheduleId of prefs.scheduleIds) {
       for (const date of dates) {
@@ -505,6 +521,8 @@ export class SchedulerService {
       console.log(
         `[Scheduler] Starting check for schedules=${prefs.scheduleIds.join(',')} dates=${dates.join(',')} window=${prefs.timeRange.start}-${prefs.timeRange.end} players>=${prefs.players}`
       )
+
+      await this.prefetchWeatherForCheck(prefs.scheduleIds, dates)
 
       record.schedulesChecked.push(...prefs.scheduleIds)
       for (const scheduleId of prefs.scheduleIds) {

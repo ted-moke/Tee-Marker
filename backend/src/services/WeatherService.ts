@@ -146,55 +146,131 @@ function weatherCodeLabel(code: number | null): string {
   }
 }
 
+const CACHE_GRID_DEGREES = 0.1
+
+function snapCoord(value: number): string {
+  return (Math.round(value / CACHE_GRID_DEGREES) * CACHE_GRID_DEGREES).toFixed(2)
+}
+
+async function requestForecast(
+  params: Record<string, string | number>,
+  label: string
+): Promise<OpenMeteoForecastResponse | null> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await axios.get<OpenMeteoForecastResponse>(OPEN_METEO_BASE_URL, {
+        params,
+        timeout: 10000,
+      })
+      return response.data
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } }).response?.status
+      const message = err instanceof Error ? err.message : String(err)
+      if (status === 429 && attempt < 2) {
+        const waitMs = 1000 * 2 ** attempt + Math.floor(Math.random() * 500)
+        console.warn(
+          `[WeatherService] ${label} 429; retrying in ${waitMs}ms (attempt ${attempt + 1}/3)`
+        )
+        await sleep(waitMs)
+        continue
+      }
+      console.warn(`[WeatherService] ${label} request failed: ${message}`)
+      return null
+    }
+  }
+  return null
+}
+
 export class WeatherService {
   private readonly hourlyCache = new Map<string, CachedHourlyForecast>()
   private readonly dailyCache = new Map<string, CachedDailyForecast>()
   private readonly dailyRangeCache = new Map<string, CachedDailyForecast>()
+  private readonly hourlyInFlight = new Map<string, Promise<CachedHourlyForecast | null>>()
+  private readonly dailyRangeInFlight = new Map<string, Promise<CachedDailyForecast | null>>()
 
   private cacheKey(location: CourseLocation, date: string): string {
-    return `${location.latitude},${location.longitude},${location.timezone},${date}`
+    return `${snapCoord(location.latitude)},${snapCoord(location.longitude)},${location.timezone},${date}`
   }
 
   private rangeCacheKey(location: CourseLocation, startDate: string, endDate: string): string {
-    return `${location.latitude},${location.longitude},${location.timezone},${startDate}..${endDate}`
+    return `${snapCoord(location.latitude)},${snapCoord(location.longitude)},${location.timezone},${startDate}..${endDate}`
   }
 
-  private async fetchHourlyForecast(location: CourseLocation, date: string): Promise<CachedHourlyForecast | null> {
-    try {
-      const response = await axios.get<OpenMeteoForecastResponse>(OPEN_METEO_BASE_URL, {
-        params: {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          timezone: location.timezone,
-          start_date: date,
-          end_date: date,
-          hourly: WEATHER_FORECAST_HOURLY_VARS.join(','),
-          temperature_unit: 'fahrenheit',
-          wind_speed_unit: 'mph',
-        },
-        timeout: 10000,
-      })
+  private splitHourlyByDate(
+    data: OpenMeteoForecastResponse,
+    expiresAtMs: number
+  ): Map<string, CachedHourlyForecast> {
+    const result = new Map<string, CachedHourlyForecast>()
+    const hourly = data.hourly
+    const times = hourly?.time ?? []
+    if (times.length === 0) return result
 
-      const hourly = response.data.hourly
-      const times = hourly?.time ?? []
-      if (times.length === 0) {
-        return null
+    for (let i = 0; i < times.length; i += 1) {
+      const iso = times[i] ?? ''
+      const date = iso.slice(0, 10)
+      if (!date) continue
+      let bucket = result.get(date)
+      if (!bucket) {
+        bucket = {
+          expiresAtMs,
+          hourly: {
+            time: [],
+            temperature_2m: [],
+            precipitation_probability: [],
+            wind_speed_10m: [],
+            weather_code: [],
+          },
+        }
+        result.set(date, bucket)
       }
+      bucket.hourly.time.push(iso)
+      bucket.hourly.temperature_2m.push(hourly?.temperature_2m?.[i] ?? null)
+      bucket.hourly.precipitation_probability.push(hourly?.precipitation_probability?.[i] ?? null)
+      bucket.hourly.wind_speed_10m.push(hourly?.wind_speed_10m?.[i] ?? null)
+      bucket.hourly.weather_code.push(hourly?.weather_code?.[i] ?? null)
+    }
+    return result
+  }
 
-      return {
-        expiresAtMs: Date.now() + WEATHER_CACHE_TTL_MS,
-        hourly: {
-          time: times,
-          temperature_2m: hourly?.temperature_2m ?? [],
-          precipitation_probability: hourly?.precipitation_probability ?? [],
-          wind_speed_10m: hourly?.wind_speed_10m ?? [],
-          weather_code: hourly?.weather_code ?? [],
-        },
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      console.warn(`[WeatherService] Forecast request failed for date=${date}: ${message}`)
-      return null
+  private async fetchHourlyRange(
+    location: CourseLocation,
+    startDate: string,
+    endDate: string
+  ): Promise<Map<string, CachedHourlyForecast>> {
+    const data = await requestForecast(
+      {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        timezone: location.timezone,
+        start_date: startDate,
+        end_date: endDate,
+        hourly: WEATHER_FORECAST_HOURLY_VARS.join(','),
+        temperature_unit: 'fahrenheit',
+        wind_speed_unit: 'mph',
+      },
+      `Hourly forecast ${startDate}..${endDate}`
+    )
+    if (!data) return new Map()
+    return this.splitHourlyByDate(data, Date.now() + WEATHER_CACHE_TTL_MS)
+  }
+
+  async prefetchHourlyForDates(location: CourseLocation, dates: string[]): Promise<void> {
+    if (dates.length === 0) return
+    const sorted = [...new Set(dates)].sort((a, b) => a.localeCompare(b))
+    const stale = sorted.filter(date => {
+      const cached = this.hourlyCache.get(this.cacheKey(location, date))
+      return !cached || cached.expiresAtMs <= Date.now()
+    })
+    if (stale.length === 0) return
+
+    const startDate = stale[0]!
+    const endDate = stale[stale.length - 1]!
+    console.log(
+      `[WeatherService] hourly prefetch ${snapCoord(location.latitude)},${snapCoord(location.longitude)} ${startDate}..${endDate} (${stale.length} dates)`
+    )
+    const buckets = await this.fetchHourlyRange(location, startDate, endDate)
+    for (const [date, bucket] of buckets) {
+      this.hourlyCache.set(this.cacheKey(location, date), bucket)
     }
   }
 
@@ -205,15 +281,27 @@ export class WeatherService {
       return cached
     }
 
-    console.log(`[WeatherService] hourly cache miss key=${key}`)
-    const fresh = await this.fetchHourlyForecast(location, date)
-    if (!fresh) {
-      this.hourlyCache.delete(key)
-      return null
+    const inFlight = this.hourlyInFlight.get(key)
+    if (inFlight) {
+      return inFlight
     }
 
-    this.hourlyCache.set(key, fresh)
-    return fresh
+    console.log(`[WeatherService] hourly cache miss key=${key}`)
+    const pending = this.fetchHourlyRange(location, date, date)
+      .then(buckets => buckets.get(date) ?? null)
+      .then(fresh => {
+        if (!fresh) {
+          this.hourlyCache.delete(key)
+          return null
+        }
+        this.hourlyCache.set(key, fresh)
+        return fresh
+      })
+      .finally(() => {
+        this.hourlyInFlight.delete(key)
+      })
+    this.hourlyInFlight.set(key, pending)
+    return pending
   }
 
   async getWeatherForTeeTime(
@@ -286,55 +374,35 @@ export class WeatherService {
     startDate: string,
     endDate: string
   ): Promise<CachedDailyForecast | null> {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        const response = await axios.get<OpenMeteoForecastResponse>(OPEN_METEO_BASE_URL, {
-          params: {
-            latitude: location.latitude,
-            longitude: location.longitude,
-            timezone: location.timezone,
-            start_date: startDate,
-            end_date: endDate,
-            daily: WEATHER_FORECAST_DAILY_VARS.join(','),
-            temperature_unit: 'fahrenheit',
-            wind_speed_unit: 'mph',
-          },
-          timeout: 10000,
-        })
+    const data = await requestForecast(
+      {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        timezone: location.timezone,
+        start_date: startDate,
+        end_date: endDate,
+        daily: WEATHER_FORECAST_DAILY_VARS.join(','),
+        temperature_unit: 'fahrenheit',
+        wind_speed_unit: 'mph',
+      },
+      `Daily forecast ${startDate}..${endDate}`
+    )
+    if (!data) return null
+    const daily = data.daily
+    const days = daily?.time ?? []
+    if (days.length === 0) return null
 
-        const daily = response.data.daily
-        const days = daily?.time ?? []
-        if (days.length === 0) {
-          return null
-        }
-
-        return {
-          expiresAtMs: Date.now() + WEATHER_CACHE_TTL_MS,
-          daily: {
-            time: days,
-            temperature_2m_max: daily?.temperature_2m_max ?? [],
-            temperature_2m_min: daily?.temperature_2m_min ?? [],
-            precipitation_probability_max: daily?.precipitation_probability_max ?? [],
-            wind_speed_10m_max: daily?.wind_speed_10m_max ?? [],
-            weather_code: daily?.weather_code ?? [],
-          },
-        }
-      } catch (err: unknown) {
-        const status = (err as { response?: { status?: number } }).response?.status
-        const message = err instanceof Error ? err.message : String(err)
-        if (status === 429 && attempt < 2) {
-          const waitMs = 300 * (attempt + 1) + Math.floor(Math.random() * 250)
-          console.warn(
-            `[WeatherService] Daily forecast 429 for ${startDate}..${endDate}; retrying in ${waitMs}ms (attempt ${attempt + 1}/3)`
-          )
-          await sleep(waitMs)
-          continue
-        }
-        console.warn(`[WeatherService] Daily forecast request failed for ${startDate}..${endDate}: ${message}`)
-        return null
-      }
+    return {
+      expiresAtMs: Date.now() + WEATHER_CACHE_TTL_MS,
+      daily: {
+        time: days,
+        temperature_2m_max: daily?.temperature_2m_max ?? [],
+        temperature_2m_min: daily?.temperature_2m_min ?? [],
+        precipitation_probability_max: daily?.precipitation_probability_max ?? [],
+        wind_speed_10m_max: daily?.wind_speed_10m_max ?? [],
+        weather_code: daily?.weather_code ?? [],
+      },
     }
-    return null
   }
 
   private async getDailyForecast(location: CourseLocation, date: string): Promise<CachedDailyForecast | null> {
@@ -344,15 +412,26 @@ export class WeatherService {
       return cached
     }
 
-    console.log(`[WeatherService] daily cache miss key=${key}`)
-    const fresh = await this.fetchDailyForecastRange(location, date, date)
-    if (!fresh) {
-      this.dailyCache.delete(key)
-      return null
+    const inFlight = this.dailyRangeInFlight.get(key)
+    if (inFlight) {
+      return inFlight
     }
 
-    this.dailyCache.set(key, fresh)
-    return fresh
+    console.log(`[WeatherService] daily cache miss key=${key}`)
+    const pending = this.fetchDailyForecastRange(location, date, date)
+      .then(fresh => {
+        if (!fresh) {
+          this.dailyCache.delete(key)
+          return null
+        }
+        this.dailyCache.set(key, fresh)
+        return fresh
+      })
+      .finally(() => {
+        this.dailyRangeInFlight.delete(key)
+      })
+    this.dailyRangeInFlight.set(key, pending)
+    return pending
   }
 
   async getDailyWeather(location: CourseLocation, date: string): Promise<DailyForecastWeather | null> {
@@ -384,10 +463,21 @@ export class WeatherService {
 
     const rangeKey = this.rangeCacheKey(location, startDate, endDate)
     const cached = this.dailyRangeCache.get(rangeKey)
-    const forecast =
-      cached && cached.expiresAtMs > Date.now()
-        ? cached
-        : await this.fetchDailyForecastRange(location, startDate, endDate)
+    let forecast: CachedDailyForecast | null
+    if (cached && cached.expiresAtMs > Date.now()) {
+      forecast = cached
+    } else {
+      const existing = this.dailyRangeInFlight.get(rangeKey)
+      if (existing) {
+        forecast = await existing
+      } else {
+        const pending = this.fetchDailyForecastRange(location, startDate, endDate).finally(() => {
+          this.dailyRangeInFlight.delete(rangeKey)
+        })
+        this.dailyRangeInFlight.set(rangeKey, pending)
+        forecast = await pending
+      }
+    }
 
     if (!forecast) {
       for (const date of uniqueDates) {

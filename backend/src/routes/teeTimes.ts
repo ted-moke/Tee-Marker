@@ -62,22 +62,14 @@ router.get('/search', async (req: Request, res: Response): Promise<void> => {
         ? rawPrefs.forecastOffsetHours
         : DEFAULT_PREFERENCES.forecastOffsetHours
 
-    const weatherByTime = new Map<string, TeeTime['weather'] | null>()
     const enrichedTimes = await Promise.all(
       times.map(async (teeTime): Promise<TeeTime> => {
-        if (weatherByTime.has(teeTime.time)) {
-          const cachedWeather = weatherByTime.get(teeTime.time)
-          return cachedWeather ? { ...teeTime, weather: cachedWeather } : teeTime
-        }
-
         try {
           const weather = await weatherService.getWeatherForTeeTime(location, searchDate, teeTime.time, forecastOffsetHours)
-          weatherByTime.set(teeTime.time, weather)
           return weather ? { ...teeTime, weather } : teeTime
         } catch (weatherErr: unknown) {
           const message = weatherErr instanceof Error ? weatherErr.message : String(weatherErr)
           console.warn(`[tee-times/search] weather enrichment failed for ${schedule} ${searchDate}: ${message}`)
-          weatherByTime.set(teeTime.time, null)
           return teeTime
         }
       })

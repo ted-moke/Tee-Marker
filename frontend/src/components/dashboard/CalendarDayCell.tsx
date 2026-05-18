@@ -1,6 +1,7 @@
 import React from 'react'
 import { EyeOff, Bookmark } from 'lucide-react'
 import CourseChip from '@/components/dashboard/CourseChip'
+import { isTimeInRange } from '@/components/dashboard/utils'
 import type { CourseDaySummary, Reservation } from '@/components/dashboard/types'
 
 interface CalendarDayCellProps {
@@ -9,6 +10,7 @@ interface CalendarDayCellProps {
   perCourse: Record<string, CourseDaySummary>
   isMonitored: boolean
   isToday: boolean
+  timeRange?: { start: string; end: string }
   reservation?: Reservation
   selectedScheduleId: string | null
   onChipClick: (scheduleId: string) => void
@@ -24,6 +26,7 @@ const CalendarDayCell: React.FC<CalendarDayCellProps> = ({
   perCourse,
   isMonitored,
   isToday,
+  timeRange,
   reservation,
   selectedScheduleId,
   onChipClick,
@@ -62,12 +65,16 @@ const CalendarDayCell: React.FC<CalendarDayCellProps> = ({
       <div className="mt-1 flex flex-col gap-0.5">
         {visibleScheduleIds.map(scheduleId => {
           const summary = perCourse[scheduleId]!
+          const hasTimeInWindow = timeRange
+            ? summary.allTimes.some(t => isTimeInRange(t.time, timeRange.start, timeRange.end))
+            : true
           return (
             <CourseChip
               key={scheduleId}
               scheduleId={scheduleId}
               summary={summary}
               isSelected={selectedScheduleId === scheduleId}
+              hasTimeInWindow={hasTimeInWindow}
               onClick={() => onChipClick(scheduleId)}
             />
           )
