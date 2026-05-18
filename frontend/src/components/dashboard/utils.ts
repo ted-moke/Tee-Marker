@@ -59,6 +59,18 @@ export function formatTime12h(rawTime: string): string {
   return `${h12}:${String(mins).padStart(2, '0')} ${meridiem}`
 }
 
+export function formatTime12hShort(rawTime: string): string {
+  const clean = rawTime.trim()
+  const minutes = parseTimeToMinutes(clean)
+  if (!Number.isFinite(minutes) || minutes === Number.MAX_SAFE_INTEGER) return clean
+
+  const h24 = Math.floor(minutes / 60)
+  const mins = minutes % 60
+  const meridiem = h24 >= 12 ? 'p' : 'a'
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12
+  return `${h12}:${String(mins).padStart(2, '0')}${meridiem}`
+}
+
 export function weekdayLabel(dateStr: string): string {
   return new Date(`${dateStr}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short' })
 }

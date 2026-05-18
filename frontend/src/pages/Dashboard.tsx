@@ -222,6 +222,7 @@ const Dashboard: React.FC = () => {
         preferences={preferences}
         dateRange={dateRange}
         calendarData={calendarData}
+        reservations={reservations}
         lastCheck={status?.lastCheck}
       />
     </div>
