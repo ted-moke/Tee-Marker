@@ -690,20 +690,31 @@ function findEmptyWeeks(reservations: Reservation[], weekStarts: Date[], specifi
     .map(ws => toDateString(ws))
 }
 
-export async function fetchAllReservations(forceRefresh = false): Promise<Reservation[]> {
-  const results = await Promise.allSettled([
-    francisByrneAdapter.fetchReservations(forceRefresh),
-    ezLinksAdapter.fetchReservations(forceRefresh),
-  ])
-  const out: Reservation[] = []
-  for (const r of results) {
-    if (r.status === 'fulfilled') {
-      out.push(...r.value)
+export interface ReservationFetchResult {
+  reservations: Reservation[]
+  errors: { source: TeeTimeSource; message: string }[]
+}
+
+export async function fetchAllReservations(forceRefresh = false): Promise<ReservationFetchResult> {
+  const sources: { source: TeeTimeSource; fetch: () => Promise<Reservation[]> }[] = [
+    { source: 'foreup', fetch: () => francisByrneAdapter.fetchReservations(forceRefresh) },
+    { source: 'ezlinks', fetch: () => ezLinksAdapter.fetchReservations(forceRefresh) },
+  ]
+  const settled = await Promise.allSettled(sources.map(s => s.fetch()))
+  const reservations: Reservation[] = []
+  const errors: { source: TeeTimeSource; message: string }[] = []
+  settled.forEach((result, i) => {
+    const source = sources[i]!.source
+    if (result.status === 'fulfilled') {
+      reservations.push(...result.value)
     } else {
-      console.warn('[Reservations] provider fetch failed:', r.reason?.message ?? r.reason)
+      const message = result.reason instanceof Error ? result.reason.message : String(result.reason)
+      console.warn(`[Reservations] ${source} fetch failed:`, message)
+      errors.push({ source, message })
     }
-  }
-  return out.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
+  })
+  reservations.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
+  return { reservations, errors }
 }
 
 async function loadPrefs(): Promise<Preferences | null> {
@@ -764,7 +775,7 @@ export class ReservationSchedulerService {
     if (!prefs?.discordWebhookUrl || !prefs.reservationReminders) return
 
     const todayStr = toDateString(new Date())
-    const reservations = await fetchAllReservations()
+    const { reservations } = await fetchAllReservations()
     const todaysReservations = reservations.filter(r => r.date === todayStr)
 
     for (const r of todaysReservations) {
@@ -833,7 +844,7 @@ export class ReservationSchedulerService {
     const prefs = await loadPrefs()
     if (!prefs?.discordWebhookUrl || !prefs.weeklyDigest) return
 
-    const reservations = await fetchAllReservations()
+    const { reservations } = await fetchAllReservations()
     const weekStarts = getUpcomingWeekStarts(3)
     const emptyWeeks = findEmptyWeeks(reservations, weekStarts, prefs.specificDates || [])
 

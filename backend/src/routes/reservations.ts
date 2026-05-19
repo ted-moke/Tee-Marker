@@ -5,8 +5,8 @@ const router = Router()
 
 router.get('/', async (_req, res, next) => {
   try {
-    const reservations = await fetchAllReservations()
-    res.json({ success: true, data: reservations })
+    const { reservations, errors } = await fetchAllReservations()
+    res.json({ success: true, data: reservations, errors })
   } catch (err) {
     next(err)
   }
@@ -14,8 +14,8 @@ router.get('/', async (_req, res, next) => {
 
 router.post('/refresh', async (_req, res, next) => {
   try {
-    const reservations = await fetchAllReservations(true)
-    res.json({ success: true, data: reservations })
+    const { reservations, errors } = await fetchAllReservations(true)
+    res.json({ success: true, data: reservations, errors })
   } catch (err) {
     next(err)
   }

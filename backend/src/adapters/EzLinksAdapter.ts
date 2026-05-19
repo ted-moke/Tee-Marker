@@ -281,22 +281,44 @@ export class EzLinksAdapter {
     })
 
     let response = await doFetch()
+    console.log(`[EzLinks] Reservations GET /api/account/ordershistory status=${response.status}`)
     if ((response.status === 401 || response.status === 403) && !this.cookieOverride()) {
+      console.log(`[EzLinks] Reservations got ${response.status}, re-logging in and retrying once...`)
       await this.login()
       response = await doFetch()
+      console.log(`[EzLinks] Reservations retry status=${response.status}`)
     }
     if (!response.ok) {
-      console.error(`[EzLinks] Reservations fetch failed status=${response.status} body=${response.body.slice(0, 300)}`)
+      const snippet = response.body.slice(0, 300)
+      console.error(`[EzLinks] Reservations fetch failed status=${response.status} body=${snippet}`)
       throw new Error(`EzLinks reservations HTTP ${response.status}`)
     }
 
     const data = await response.json<OrdersHistoryResponse>()
+    const responseKeys = Object.keys(data as Record<string, unknown>)
     const future = data.FutureOrders ?? []
+    const history = data.OrdersHistories ?? []
+    console.log(
+      `[EzLinks] Reservations response keys=${JSON.stringify(responseKeys)} FutureOrders=${future.length} OrdersHistories=${history.length}`
+    )
+    if (future.length > 0) {
+      console.log(`[EzLinks] Reservations sample raw: ${JSON.stringify(future[0])}`)
+    }
+
     const today = new Date().toISOString().split('T')[0]!
-    const reservations = future
-      .map(o => this.mapReservation(o))
+    const mapped = future.map(o => ({ raw: o, mapped: this.mapReservation(o) }))
+    const reservations = mapped
+      .map(m => m.mapped)
       .filter((r): r is Reservation => r !== null && r.date >= today)
       .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
+
+    if (future.length > 0 && reservations.length === 0) {
+      const firstDropped = mapped.find(m => m.mapped === null)?.raw
+      console.warn(
+        `[EzLinks] All ${future.length} FutureOrders dropped during mapping — likely date-parse failure. ` +
+          `Sample ReservationDateTime: ${JSON.stringify(firstDropped?.ReservationDateTime)}`
+      )
+    }
 
     console.log(`[EzLinks] Mapped ${reservations.length}/${future.length} future reservations`)
     this.reservationCache = { reservations, fetchedAt: now }
