@@ -52,7 +52,13 @@ export const db = getFirestore()
 
 const app = express()
 
-app.use(helmet())
+app.use(helmet({
+  hsts: false,
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: { upgradeInsecureRequests: null },
+  },
+}))
 app.use(compression())
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
