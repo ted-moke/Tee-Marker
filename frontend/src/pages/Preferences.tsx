@@ -14,8 +14,7 @@ interface Preferences {
   checkIntervalMinutes: number
   forecastOffsetHours: number
   discordWebhookUrl: string
-  reservationReminders: boolean
-  weeklyDigest: boolean
+  dailyDigest: boolean
   weatherThresholds: {
     rainGoodMax: number
     rainBadMin: number
@@ -57,8 +56,7 @@ const DEFAULT: Preferences = {
   checkIntervalMinutes: 30,
   forecastOffsetHours: 0,
   discordWebhookUrl: '',
-  reservationReminders: true,
-  weeklyDigest: true,
+  dailyDigest: true,
   weatherThresholds: {
     rainGoodMax: 20,
     rainBadMin: 60,
@@ -270,17 +268,10 @@ const Preferences: React.FC = () => {
           <p className="text-xs text-gray-500 mb-3">Sent to your Discord webhook.</p>
           <div className="space-y-3">
             <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-primary-600" {...register('reservationReminders')} />
+              <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-primary-600" {...register('dailyDigest')} />
               <div>
-                <span className="text-sm text-gray-700 font-medium">Day-of reminder</span>
-                <p className="text-xs text-gray-400">Discord message at 6am on days you have a tee time booked</p>
-              </div>
-            </label>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-primary-600" {...register('weeklyDigest')} />
-              <div>
-                <span className="text-sm text-gray-700 font-medium">Weekly digest</span>
-                <p className="text-xs text-gray-400">Summary of upcoming bookings + unbooked weeks, sent Mon/Thu/Sun at 8am</p>
+                <span className="text-sm text-gray-700 font-medium">Daily digest</span>
+                <p className="text-xs text-gray-400">6am ET — highlights tomorrow's tee time plus upcoming bookings and unbooked weeks</p>
               </div>
             </label>
           </div>

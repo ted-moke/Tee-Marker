@@ -23,7 +23,7 @@ router.post('/refresh', async (_req, res, next) => {
 
 router.post('/digest', async (_req, res, next) => {
   try {
-    await reservationSchedulerService.runWeeklyDigest()
+    await reservationSchedulerService.runDailyDigest()
     res.json({ success: true })
   } catch (err) {
     next(err)

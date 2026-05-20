@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { DailyWeatherSummaryDay, Reservation, TeeTime, WeatherThresholds } from '../types'
+import { DailyWeatherSummaryDay, Reservation, TeeTime, TeeTimeWeather, WeatherThresholds } from '../types'
 import { ALL_SCHEDULE_NAMES } from '../constants'
 
 const DISCORD_DESCRIPTION_LIMIT = 4000
@@ -153,29 +153,25 @@ export class NotificationService {
   }
 
   private formatTeeTimeWithWeather(time: TeeTime, thresholds?: WeatherThresholds): string {
-    const base = this.formatTime(time.time)
-    if (!time.weather) {
-      return base
-    }
+    return `${this.formatTime(time.time)}${this.formatWeatherSuffix(time.weather, thresholds)}`
+  }
 
-    const weatherParts: string[] = []
-    if (time.weather.precipitationProbabilityPct !== null) {
-      const rain = Math.round(time.weather.precipitationProbabilityPct)
-      weatherParts.push(`${this.rainEmoji(rain, thresholds)} ${rain}%`)
+  formatWeatherSuffix(weather: TeeTimeWeather | undefined, thresholds?: WeatherThresholds): string {
+    if (!weather) return ''
+    const parts: string[] = []
+    if (weather.precipitationProbabilityPct !== null) {
+      const rain = Math.round(weather.precipitationProbabilityPct)
+      parts.push(`${this.rainEmoji(rain, thresholds)} ${rain}%`)
     }
-    if (time.weather.windSpeedMph !== null) {
-      const wind = Math.round(time.weather.windSpeedMph)
-      weatherParts.push(`${this.windEmoji(wind, thresholds)} ${wind}mph`)
+    if (weather.windSpeedMph !== null) {
+      const wind = Math.round(weather.windSpeedMph)
+      parts.push(`${this.windEmoji(wind, thresholds)} ${wind}mph`)
     }
-    if (time.weather.temperatureF !== null) {
-      const temp = Math.round(time.weather.temperatureF)
-      weatherParts.push(`${this.tempEmoji(temp, thresholds)} ${temp}F`)
+    if (weather.temperatureF !== null) {
+      const temp = Math.round(weather.temperatureF)
+      parts.push(`${this.tempEmoji(temp, thresholds)} ${temp}F`)
     }
-
-    if (weatherParts.length === 0) {
-      return base
-    }
-    return `${base} (${weatherParts.join(' ')})`
+    return parts.length === 0 ? '' : ` (${parts.join(' ')})`
   }
 
   private rainEmoji(value: number, thresholds?: WeatherThresholds): string {
@@ -223,19 +219,13 @@ export class NotificationService {
     return '🟡'
   }
 
-  async sendDayOfReminder(webhookUrl: string, reservation: Reservation): Promise<void> {
-    if (!webhookUrl) throw new Error('No Discord webhook URL configured')
-    const timeLabel = this.formatTime(reservation.time)
-    const embed = {
-      title: `⛳ Tee time today — ${timeLabel} at ${reservation.scheduleName}`,
-      color: 0x22c55e,
-      description: `${reservation.players} player${reservation.players !== 1 ? 's' : ''}`,
-      timestamp: new Date().toISOString(),
-    }
-    await axios.post(webhookUrl, { embeds: [embed] })
-  }
-
-  async sendWeeklyDigest(webhookUrl: string, reservations: Reservation[], emptyWeekStarts: string[]): Promise<void> {
+  async sendDailyDigest(
+    webhookUrl: string,
+    tomorrowsReservations: Reservation[],
+    upcomingReservations: Reservation[],
+    emptyWeekStarts: string[],
+    thresholds?: WeatherThresholds
+  ): Promise<void> {
     if (!webhookUrl) throw new Error('No Discord webhook URL configured')
 
     const getWeekStart = (dateStr: string): string => {
@@ -245,45 +235,46 @@ export class NotificationService {
       return d.toISOString().split('T')[0]!
     }
 
-    // Build a map of weekStart → items, preserving chronological order
-    const weekMap = new Map<string, { reservations: Reservation[]; empty: boolean }>()
+    const sections: string[] = []
 
+    if (tomorrowsReservations.length > 0) {
+      const tomorrowLines = [...tomorrowsReservations]
+        .sort((a, b) => a.time.localeCompare(b.time))
+        .map(r => `• ${this.formatTime(r.time)} — ${r.scheduleName} (${r.players} player${r.players !== 1 ? 's' : ''})${this.formatWeatherSuffix(r.weather, thresholds)}`)
+      sections.push(['**⏰ Tomorrow**', ...tomorrowLines].join('\n'))
+    }
+
+    const weekMap = new Map<string, { reservations: Reservation[]; empty: boolean }>()
     const ensureWeek = (ws: string) => {
       if (!weekMap.has(ws)) weekMap.set(ws, { reservations: [], empty: false })
       return weekMap.get(ws)!
     }
-
-    for (const r of reservations) ensureWeek(getWeekStart(r.date)).reservations.push(r)
+    for (const r of upcomingReservations) ensureWeek(getWeekStart(r.date)).reservations.push(r)
     for (const ws of emptyWeekStarts) ensureWeek(ws).empty = true
 
     const sortedWeeks = [...weekMap.entries()].sort(([a], [b]) => a.localeCompare(b))
-
-    if (sortedWeeks.length === 0) {
-      const embed = {
-        title: '📅 Weekly Tee Time Digest',
-        color: 0x3b82f6,
-        description: 'No upcoming tee times booked.',
-        timestamp: new Date().toISOString(),
-      }
-      await axios.post(webhookUrl, { embeds: [embed] })
-      return
+    if (sortedWeeks.length > 0) {
+      const weekSections = sortedWeeks.map(([ws, { reservations: rs, empty }]) => {
+        const d = new Date(`${ws}T00:00:00`)
+        const weekLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        const header = `**Week of ${weekLabel}**`
+        const items = rs
+          .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
+          .map(r => `• ${this.formatRelativeDayLabel(r.date)} ${this.formatTime(r.time)} — ${r.scheduleName}${this.formatWeatherSuffix(r.weather, thresholds)}`)
+        if (empty) items.push('⚠️ No tee time booked')
+        return [header, ...items].join('\n')
+      })
+      sections.push(...weekSections)
     }
 
-    const sections = sortedWeeks.map(([ws, { reservations: rs, empty }]) => {
-      const d = new Date(`${ws}T00:00:00`)
-      const weekLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      const header = `**Week of ${weekLabel}**`
-      const items = rs
-        .sort((a, b) => a.date.localeCompare(b.date))
-        .map(r => `• ${this.formatRelativeDayLabel(r.date)} ${this.formatTime(r.time)} — ${r.scheduleName}`)
-      if (empty) items.push('⚠️ No tee time booked')
-      return [header, ...items].join('\n')
-    })
+    const description = sections.length > 0
+      ? sections.join('\n\n')
+      : 'No upcoming tee times booked.'
 
     const embed = {
-      title: '📅 Weekly Tee Time Digest',
+      title: '📅 Tee Time Digest',
       color: 0x3b82f6,
-      description: sections.join('\n\n'),
+      description,
       timestamp: new Date().toISOString(),
     }
     await axios.post(webhookUrl, { embeds: [embed] })

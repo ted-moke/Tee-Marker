@@ -1,5 +1,7 @@
 import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from 'discord.js'
-import { fetchAllReservations } from '../../services/SchedulerService'
+import { fetchAllReservations, loadPrefs, enrichReservationsWithWeather } from '../../services/SchedulerService'
+import { notificationService } from '../../services/NotificationService'
+import { DEFAULT_PREFERENCES } from '../../constants'
 
 export const data = new SlashCommandBuilder()
   .setName('reservations')
@@ -11,12 +13,19 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   const { reservations, errors } = await fetchAllReservations()
 
   const today = new Date().toISOString().slice(0, 10)
-  const upcoming = reservations.filter(r => r.date >= today && r.status !== 'cancelled')
+  const filtered = reservations.filter(r => r.date >= today && r.status !== 'cancelled')
+
+  const prefs = (await loadPrefs()) ?? {
+    ...DEFAULT_PREFERENCES,
+    weatherThresholds: { ...DEFAULT_PREFERENCES.weatherThresholds },
+  }
+  const upcoming = await enrichReservationsWithWeather(filtered, prefs.forecastOffsetHours)
 
   const lines = upcoming.map(r => {
     const d = new Date(r.date + 'T12:00:00')
     const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', timeZone: 'America/New_York' })
-    return `**${dayLabel}** ${r.time} — ${r.scheduleName} (${r.players} player${r.players !== 1 ? 's' : ''})`
+    const weatherSuffix = notificationService.formatWeatherSuffix(r.weather, prefs.weatherThresholds)
+    return `**${dayLabel}** ${r.time} — ${r.scheduleName} (${r.players} player${r.players !== 1 ? 's' : ''})${weatherSuffix}`
   })
 
   const footerParts = errors.map(e => `⚠️ ${e.source} failed: ${e.message}`)

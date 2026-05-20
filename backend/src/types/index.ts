@@ -7,8 +7,7 @@ export interface Preferences {
   forecastOffsetHours: number
   discordWebhookUrl: string
   weatherThresholds: WeatherThresholds
-  reservationReminders: boolean
-  weeklyDigest: boolean
+  dailyDigest: boolean
 }
 
 export type TeeTimeSource = 'foreup' | 'ezlinks'
@@ -22,6 +21,7 @@ export interface Reservation {
   time: string      // raw time string from the provider
   players: number
   status: string
+  weather?: TeeTimeWeather
 }
 
 export interface WeatherThresholds {

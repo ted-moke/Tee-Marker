@@ -586,12 +586,6 @@ export class SchedulerService {
         }
       }
 
-      try {
-        await this.sendDailyWeatherSummaryIfNeeded(prefs, searchedTimes, false)
-      } catch (err: any) {
-        record.errors.push(`Daily weather summary failed: ${err?.message}`)
-      }
-
       if (newMatches.length > 0 && prefs.discordWebhookUrl) {
         try {
           await notificationService.sendTeeTimeAlert(prefs.discordWebhookUrl, newMatches, prefs.weatherThresholds)
@@ -717,7 +711,7 @@ export async function fetchAllReservations(forceRefresh = false): Promise<Reserv
   return { reservations, errors }
 }
 
-async function loadPrefs(): Promise<Preferences | null> {
+export async function loadPrefs(): Promise<Preferences | null> {
   const prefsDoc = await db.collection('preferences').doc('user').get()
   if (!prefsDoc.exists) return null
   const rawPrefs = prefsDoc.data() as Partial<Preferences>
@@ -731,6 +725,31 @@ async function loadPrefs(): Promise<Preferences | null> {
   }
 }
 
+export async function enrichReservationsWithWeather(
+  reservations: Reservation[],
+  forecastOffsetHours: number
+): Promise<Reservation[]> {
+  return Promise.all(
+    reservations.map(async (r): Promise<Reservation> => {
+      const location = COURSE_LOCATION_BY_SCHEDULE[r.scheduleId]
+      if (!location) return r
+      try {
+        const weather = await weatherService.getWeatherForTeeTime(
+          location,
+          r.date,
+          r.time,
+          forecastOffsetHours
+        )
+        return weather ? { ...r, weather } : r
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        console.warn(`[Reservations] weather enrichment failed for ${r.id}: ${message}`)
+        return r
+      }
+    })
+  )
+}
+
 // ─── Reservation Scheduler ─────────────────────────────────────────────────────
 
 export class ReservationSchedulerService {
@@ -739,30 +758,32 @@ export class ReservationSchedulerService {
   start(): void {
     this.stop()
 
-    // 6am daily: day-of reminder if reservation today
+    // 6am ET daily: tee-time digest (tomorrow highlight + upcoming weeks)
     this.jobs.push(
       cron.schedule('0 6 * * *', () => {
-        this.runDayOfReminder().catch(err => console.error('[ReservationScheduler] Day-of reminder failed:', err))
-      })
+        this.runDailyDigest().catch(err => console.error('[ReservationScheduler] Daily digest failed:', err))
+      }, { timezone: 'America/New_York' })
     )
 
-    // 8am Mon (1), Thu (4), Sun (0): weekly digest
+    // 6am ET Mon + Thu: weather outlook
     this.jobs.push(
-      cron.schedule('0 8 * * 0,1,4', () => {
-        this.runWeeklyDigest().catch(err => console.error('[ReservationScheduler] Weekly digest failed:', err))
-      })
+      cron.schedule('0 6 * * 1,4', () => {
+        schedulerService.runDailyWeatherSummary(true).catch(err =>
+          console.error('[ReservationScheduler] Weather outlook failed:', err)
+        )
+      }, { timezone: 'America/New_York' })
     )
 
-    // 3am daily: prune teeTimes/teeTimeActive docs older than 7 days
+    // 3am ET daily: prune teeTimes/teeTimeActive docs older than 7 days
     // and drop past entries from preferences.specificDates
     this.jobs.push(
       cron.schedule('0 3 * * *', () => {
         this.runTeeTimeCleanup().catch(err => console.error('[ReservationScheduler] teeTimes cleanup failed:', err))
         this.prunePastSpecificDates().catch(err => console.error('[ReservationScheduler] specificDates prune failed:', err))
-      })
+      }, { timezone: 'America/New_York' })
     )
 
-    console.log('[ReservationScheduler] Started (day-of @6am, digest @8am Mon/Thu/Sun, teeTimes + specificDates cleanup @3am)')
+    console.log('[ReservationScheduler] Started (digest @6am ET daily, weather @6am ET Mon+Thu, cleanup @3am ET)')
   }
 
   stop(): void {
@@ -770,18 +791,34 @@ export class ReservationSchedulerService {
     this.jobs = []
   }
 
-  async runDayOfReminder(): Promise<void> {
+  async runDailyDigest(): Promise<void> {
     const prefs = await loadPrefs()
-    if (!prefs?.discordWebhookUrl || !prefs.reservationReminders) return
+    if (!prefs?.discordWebhookUrl || !prefs.dailyDigest) return
 
-    const todayStr = toDateString(new Date())
     const { reservations } = await fetchAllReservations()
-    const todaysReservations = reservations.filter(r => r.date === todayStr)
 
-    for (const r of todaysReservations) {
-      await notificationService.sendDayOfReminder(prefs.discordWebhookUrl, r)
-      console.log(`[ReservationScheduler] Sent day-of reminder for ${r.date} ${r.time} ${r.scheduleName}`)
-    }
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const tomorrowStr = tomorrow.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+
+    const upcomingReservations = await enrichReservationsWithWeather(
+      reservations.filter(r => r.date >= todayStr),
+      prefs.forecastOffsetHours
+    )
+    const tomorrowsReservations = upcomingReservations.filter(r => r.date === tomorrowStr)
+
+    const weekStarts = getUpcomingWeekStarts(3)
+    const emptyWeeks = findEmptyWeeks(upcomingReservations, weekStarts, prefs.specificDates || [])
+
+    await notificationService.sendDailyDigest(
+      prefs.discordWebhookUrl,
+      tomorrowsReservations,
+      upcomingReservations,
+      emptyWeeks,
+      prefs.weatherThresholds
+    )
+    console.log(`[ReservationScheduler] Sent daily digest (tomorrow=${tomorrowsReservations.length}, upcoming=${upcomingReservations.length}, emptyWeeks=${emptyWeeks.length})`)
   }
 
   async runTeeTimeCleanup(): Promise<void> {
@@ -840,17 +877,6 @@ export class ReservationSchedulerService {
     console.log(`[ReservationScheduler] pruned ${removed} past specificDates (cutoff ${todayStr})`)
   }
 
-  async runWeeklyDigest(): Promise<void> {
-    const prefs = await loadPrefs()
-    if (!prefs?.discordWebhookUrl || !prefs.weeklyDigest) return
-
-    const { reservations } = await fetchAllReservations()
-    const weekStarts = getUpcomingWeekStarts(3)
-    const emptyWeeks = findEmptyWeeks(reservations, weekStarts, prefs.specificDates || [])
-
-    await notificationService.sendWeeklyDigest(prefs.discordWebhookUrl, reservations, emptyWeeks)
-    console.log(`[ReservationScheduler] Sent weekly digest (${reservations.length} reservations, ${emptyWeeks.length} empty weeks)`)
-  }
 }
 
 export const reservationSchedulerService = new ReservationSchedulerService()

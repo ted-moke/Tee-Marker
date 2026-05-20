@@ -84,8 +84,7 @@ export const DEFAULT_PREFERENCES = {
   checkIntervalMinutes: 30,
   forecastOffsetHours: 0,
   discordWebhookUrl: '',
-  reservationReminders: true,
-  weeklyDigest: true,
+  dailyDigest: true,
   weatherThresholds: {
     rainGoodMax: 20,
     rainBadMin: 60,
