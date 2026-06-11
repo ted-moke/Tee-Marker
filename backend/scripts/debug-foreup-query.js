@@ -72,6 +72,7 @@ async function run() {
     });
     jwt = loginRes.data.jwt;
     const loginBookingClassId = String(loginRes.data.booking_class_ids?.[0] || 49772);
+    bookingClassId = loginBookingClassId;
     const setCookie = loginRes.headers['set-cookie'];
     if (Array.isArray(setCookie) && setCookie.length > 0) {
       cookies = setCookie.map((c) => c.split(';')[0]).join('; ');

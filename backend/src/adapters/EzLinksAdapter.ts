@@ -104,6 +104,7 @@ function parseCookieOverride(raw: string): Record<string, string> {
 const REQUEST_SPACING_MS = 3000
 const MAX_429_RETRIES = 4
 const RETRY_BASE_MS = 1500
+const STALE_SESSION_RETRY_COOLDOWN_MS = 30 * 60 * 1000
 
 export class EzLinksAdapter {
   private session: Session | null = null
@@ -111,6 +112,7 @@ export class EzLinksAdapter {
   private contactId: number | null = null
   private reservationCache: ReservationCache | null = null
   private requestChain: Promise<unknown> = Promise.resolve()
+  private lastStaleRetryAt = 0
 
   private serialize<T>(fn: () => Promise<T>): Promise<T> {
     const next = this.requestChain.then(async () => {
@@ -267,6 +269,10 @@ export class EzLinksAdapter {
   }
 
   async fetchReservations(forceRefresh = false): Promise<Reservation[]> {
+    return this.doFetchReservations(forceRefresh, false)
+  }
+
+  private async doFetchReservations(forceRefresh: boolean, isStaleRetry: boolean): Promise<Reservation[]> {
     const now = Date.now()
     if (!forceRefresh && this.reservationCache && now - this.reservationCache.fetchedAt < RESERVATION_CACHE_TTL_MS) {
       return this.reservationCache.reservations
@@ -303,6 +309,25 @@ export class EzLinksAdapter {
     )
     if (future.length > 0) {
       console.log(`[EzLinks] Reservations sample raw: ${JSON.stringify(future[0])}`)
+    }
+
+    // EzLinks sometimes returns 200 OK with empty Future+Orders arrays when the
+    // session has silently expired (instead of the expected 401/403). Detect
+    // that pattern and force a fresh login + one retry. Cooldown prevents
+    // thrashing if the account legitimately has no history at all.
+    if (
+      !isStaleRetry &&
+      !this.cookieOverride() &&
+      future.length === 0 &&
+      history.length === 0 &&
+      now - this.lastStaleRetryAt > STALE_SESSION_RETRY_COOLDOWN_MS
+    ) {
+      console.warn('[EzLinks] 200 OK but FutureOrders+OrdersHistories both empty — likely stale session, re-logging in and retrying once')
+      this.lastStaleRetryAt = now
+      this.sessionReady = false
+      this.reservationCache = null
+      await this.login()
+      return this.doFetchReservations(true, true)
     }
 
     const today = new Date().toISOString().split('T')[0]!

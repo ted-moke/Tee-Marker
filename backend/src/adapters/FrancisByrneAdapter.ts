@@ -31,7 +31,9 @@ export interface SearchParams {
 }
 
 const DEFAULT_FOREUP_COURSE_ID = '22528'
-const PREFERRED_BOOKING_CLASS_ID = '49772'
+// Fallback booking class if login somehow returns none. Login normally supplies the
+// account's current class (see FrancisByrneAdapter.login), which is what we actually use.
+const DEFAULT_BOOKING_CLASS_ID = 49771
 
 function toForeUpDate(date: string): string {
   const iso = date.match(/^(\d{4})-(\d{2})-(\d{2})$/)
@@ -45,7 +47,7 @@ export class FrancisByrneAdapter {
   private client: AxiosInstance
   private jwtToken: string | null = null
   private sessionCookies: string | null = null
-  private bookingClassId: number = 49772
+  private bookingClassId: number = DEFAULT_BOOKING_CLASS_ID
   private authenticatedScheduleId: string | null = null
   private rawReservations: any[] = []
   private reservationCache: ReservationCache | null = null
@@ -102,7 +104,7 @@ export class FrancisByrneAdapter {
       }
 
       this.jwtToken = loginResponse.jwt
-      this.bookingClassId = loginResponse.booking_class_ids[0] || 49772
+      this.bookingClassId = loginResponse.booking_class_ids[0] || DEFAULT_BOOKING_CLASS_ID
       this.authenticatedScheduleId = scheduleId
       this.rawReservations = Array.isArray(loginResponse.reservations) ? loginResponse.reservations : []
       this.reservationCache = null // invalidate cache on fresh login
@@ -131,7 +133,9 @@ export class FrancisByrneAdapter {
       holes: 'all',
       // ForeUp returns fuller inventories with players=0 (Any); we filter by min players locally.
       players: '0',
-      booking_class: PREFERRED_BOOKING_CLASS_ID,
+      // Use the booking class returned by login, not a hardcoded one — the account's
+      // class can change (e.g. losing cardholder status), and Foreup 401s a mismatched class.
+      booking_class: String(this.bookingClassId),
       schedule_id: primaryScheduleId,
       specials_only: '0',
       api_key: 'no_limits'
@@ -151,7 +155,7 @@ export class FrancisByrneAdapter {
         requestedPlayers: playerMin,
         apiPlayers: 0,
         requestPath,
-        bookingClassId: PREFERRED_BOOKING_CLASS_ID,
+        bookingClassId: this.bookingClassId,
       })
     )
 
@@ -204,15 +208,18 @@ export class FrancisByrneAdapter {
         scheduleIds,
         playerMin,
         apiPlayers: 0,
-        bookingClassId: PREFERRED_BOOKING_CLASS_ID
+        bookingClassId: this.bookingClassId
       })
 
       // Retry once on auth failure
       if (error?.response?.status === 401) {
         console.log('[ForeUp] Received 401 on tee time request, refreshing login and retrying once...')
         await this.login(primaryScheduleId)
+        // Rebuild the path so the retry uses the booking class from the fresh login.
+        queryParams.set('booking_class', String(this.bookingClassId))
+        const retryPath = `/index.php/api/booking/times?${queryParams.toString()}`
         try {
-          const retryResponse = await this.client.get(requestPath, {
+          const retryResponse = await this.client.get(retryPath, {
             headers: {
               'X-Authorization': `Bearer ${this.jwtToken}`,
               'Cookie': this.sessionCookies || ''
@@ -239,7 +246,7 @@ export class FrancisByrneAdapter {
             scheduleIds,
             playerMin,
             apiPlayers: 0,
-            bookingClassId: PREFERRED_BOOKING_CLASS_ID
+            bookingClassId: this.bookingClassId
           })
           throw retryError
         }
